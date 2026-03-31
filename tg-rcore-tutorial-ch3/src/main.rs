@@ -54,8 +54,9 @@ core::arch::global_asm!(include_str!(env!("APP_ASM")));
 // 最大支持的应用程序数量
 const APP_CAPACITY: usize = 32;
 
-// 定义内核入口点：分配 (APP_CAPACITY + 2) * 8 KiB = 272 KiB 的内核栈
-// 比第二章更大，因为需要同时容纳多个任务的内核上下文。
+// 定义内核入口点：分配 (APP_CAPACITY + 4) * 8 KiB = 288 KiB 的内核栈。
+// 当前工具链下，`rust_main` 会在栈上放整个 TCB 数组，debug 构建产生的栈帧
+// 比教程原始版本更大；额外预留 16 KiB 头部空间，避免把 .bss 静态量踩坏。
 //
 // 这里不再调用 tg_linker::boot0! 宏，避免外部已发布版本与 Rust 2024
 // 在属性语义上的兼容差异影响本 crate 的发布校验。
@@ -64,7 +65,7 @@ const APP_CAPACITY: usize = 32;
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".text.entry")]
 unsafe extern "C" fn _start() -> ! {
-    const STACK_SIZE: usize = (APP_CAPACITY + 2) * 8192;
+    const STACK_SIZE: usize = (APP_CAPACITY + 4) * 8192;
     #[unsafe(link_section = ".boot.stack")]
     static mut STACK: [u8; STACK_SIZE] = [0u8; STACK_SIZE];
 
@@ -306,12 +307,21 @@ mod impls {
         fn trace(
             &self,
             _caller: Caller,
-            _trace_request: usize,
-            _id: usize,
-            _data: usize,
+            trace_request: usize,
+            id: usize,
+            data: usize,
         ) -> isize {
-            tg_console::log::info!("trace: not implemented");
-            -1
+            match trace_request {
+                0 => unsafe { core::ptr::read(id as *const u8) as isize },
+                1 => {
+                    unsafe { core::ptr::write(id as *mut u8, data as u8) };
+                    0
+                }
+                2 => crate::task::current_task()
+                    .map(|task| task.syscall_count(id) as isize)
+                    .unwrap_or(-1),
+                _ => -1,
+            }
         }
     }
 }

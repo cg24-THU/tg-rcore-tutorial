@@ -348,7 +348,7 @@ mod impls {
     };
     use alloc::vec::Vec;
     use alloc::{alloc::alloc_zeroed, string::String};
-    use core::{alloc::Layout, ptr::NonNull};
+    use core::{alloc::Layout, ops::Range, ptr::NonNull};
     use spin::Mutex;
     use tg_console::log;
     use tg_easy_fs::UserBuffer;
@@ -444,6 +444,78 @@ mod impls {
     /// 可写权限标志
     const WRITEABLE: VmFlags<Sv39> = build_flags("W_V");
 
+    #[inline]
+    fn read_c_string(current: &ProcStruct, path: usize) -> Option<String> {
+        current
+            .address_space
+            .translate::<u8>(VAddr::new(path), READABLE)
+            .map(|ptr| {
+                let mut string = String::new();
+                let mut raw_ptr = ptr.as_ptr();
+                loop {
+                    unsafe {
+                        let ch = *raw_ptr;
+                        if ch == 0 {
+                            break;
+                        }
+                        string.push(ch as char);
+                        raw_ptr = raw_ptr.add(1);
+                    }
+                }
+                string
+            })
+    }
+
+    #[inline]
+    fn read_user_string(current: &ProcStruct, path: usize, count: usize) -> Option<String> {
+        current
+            .address_space
+            .translate::<u8>(VAddr::new(path), READABLE)
+            .map(|ptr| unsafe {
+                String::from(core::str::from_utf8_unchecked(core::slice::from_raw_parts(
+                    ptr.as_ptr(),
+                    count,
+                )))
+            })
+    }
+
+    #[inline]
+    fn ranges_overlap(lhs: &Range<VPN<Sv39>>, rhs: &Range<VPN<Sv39>>) -> bool {
+        lhs.start < rhs.end && rhs.start < lhs.end
+    }
+
+    #[inline]
+    fn range_is_fully_mapped(areas: &[Range<VPN<Sv39>>], range: &Range<VPN<Sv39>>) -> bool {
+        let mut vpn = range.start;
+        while vpn < range.end {
+            if !areas.iter().any(|area| area.start <= vpn && vpn < area.end) {
+                return false;
+            }
+            vpn = vpn + 1;
+        }
+        true
+    }
+
+    #[inline]
+    fn user_map_flags(prot: usize) -> Option<VmFlags<Sv39>> {
+        if prot & !0x7 != 0 || prot & 0x7 == 0 {
+            return None;
+        }
+        let mut flags = *b"U___V";
+        if prot & 0x4 != 0 {
+            flags[1] = b'X';
+        }
+        if prot & 0x2 != 0 {
+            flags[2] = b'W';
+        }
+        if prot & 0x1 != 0 {
+            flags[3] = b'R';
+        }
+        Some(VmFlags::build_from_str(unsafe {
+            core::str::from_utf8_unchecked(&flags)
+        }))
+    }
+
     /// IO 系统调用实现：read、write、open、close
     ///
     /// 与第五章的关键区别：
@@ -537,21 +609,7 @@ mod impls {
         /// 通过 easy-fs 文件系统打开文件，分配新的文件描述符。
         fn open(&self, _caller: Caller, path: usize, flags: usize) -> isize {
             let current = PROCESSOR.get_mut().current().unwrap();
-            if let Some(ptr) = current.address_space.translate(VAddr::new(path), READABLE) {
-                // 从用户空间逐字符读取文件路径（需要地址翻译）
-                let mut string = String::new();
-                let mut raw_ptr: *mut u8 = ptr.as_ptr();
-                loop {
-                    unsafe {
-                        let ch = *raw_ptr;
-                        if ch == 0 {
-                            break;
-                        }
-                        string.push(ch as char);
-                        raw_ptr = (raw_ptr as usize + 1) as *mut u8;
-                    }
-                }
-
+            if let Some(string) = read_c_string(current, path) {
                 // 通过文件系统打开文件，分配新的文件描述符
                 if let Some(fd) =
                     FS.open(string.as_str(), OpenFlags::from_bits(flags as u32).unwrap())
@@ -586,29 +644,68 @@ mod impls {
             &self,
             _caller: Caller,
             _olddirfd: i32,
-            _oldpath: usize,
+            oldpath: usize,
             _newdirfd: i32,
-            _newpath: usize,
+            newpath: usize,
             _flags: u32,
         ) -> isize {
-            tg_console::log::info!("linkat: not implemented");
-            -1
+            let current = PROCESSOR.get_mut().current().unwrap();
+            match (read_c_string(current, oldpath), read_c_string(current, newpath)) {
+                (Some(oldpath), Some(newpath)) => FS.link(oldpath.as_str(), newpath.as_str()),
+                _ => {
+                    log::error!("path not readable");
+                    -1
+                }
+            }
         }
 
         /// unlinkat 系统调用：删除硬链接
         ///
         /// TODO: 实现 unlinkat 系统调用（练习题）
-        fn unlinkat(&self, _caller: Caller, _dirfd: i32, _path: usize, _flags: u32) -> isize {
-            tg_console::log::info!("unlinkat: not implemented");
-            -1
+        fn unlinkat(&self, _caller: Caller, _dirfd: i32, path: usize, _flags: u32) -> isize {
+            let current = PROCESSOR.get_mut().current().unwrap();
+            if let Some(path) = read_c_string(current, path) {
+                FS.unlink(path.as_str())
+            } else {
+                log::error!("path not readable");
+                -1
+            }
         }
 
         /// fstat 系统调用：获取文件状态
         ///
         /// TODO: 实现 fstat 系统调用（练习题）
-        fn fstat(&self, _caller: Caller, _fd: usize, _st: usize) -> isize {
-            tg_console::log::info!("fstat: not implemented");
-            -1
+        fn fstat(&self, _caller: Caller, fd: usize, st: usize) -> isize {
+            let current = PROCESSOR.get_mut().current().unwrap();
+            if fd >= current.fd_table.len() {
+                return -1;
+            }
+            let Some(file) = current.fd_table[fd].as_ref() else {
+                return -1;
+            };
+            let file = file.lock();
+            let Some(inode) = file.inode.as_ref() else {
+                return -1;
+            };
+            let mut stat = Stat::new();
+            stat.dev = 0;
+            stat.ino = inode.inode_id() as u64;
+            stat.mode = if inode.is_dir() {
+                StatMode::DIR
+            } else {
+                StatMode::FILE
+            };
+            stat.nlink = inode.nlink();
+            if let Some(mut ptr) = current
+                .address_space
+                .translate::<Stat>(VAddr::new(st), WRITEABLE)
+            {
+                *unsafe { ptr.as_mut() } = stat;
+                0
+            } else {
+                log::error!("ptr not writable");
+                -1
+            }
         }
     }
 
@@ -639,14 +736,9 @@ mod impls {
         ///
         /// 与第五章不同：程序从 easy-fs 文件系统中读取，而非内存中的 APPS 表
         fn exec(&self, _caller: Caller, path: usize, count: usize) -> isize {
-            const READABLE: VmFlags<Sv39> = build_flags("RV");
             let current = PROCESSOR.get_mut().current().unwrap();
-            current
-                .address_space
-                .translate::<u8>(VAddr::new(path), READABLE)
-                .map(|ptr| unsafe {
-                    core::str::from_utf8_unchecked(core::slice::from_raw_parts(ptr.as_ptr(), count))
-                })
+            read_user_string(current, path, count)
+                .as_deref()
                 .and_then(|name| FS.open(name, OpenFlags::RDONLY))
                 .map_or_else(
                     || {
@@ -694,13 +786,28 @@ mod impls {
         }
 
         /// spawn 系统调用（TODO 练习题）
-        fn spawn(&self, _caller: Caller, _path: usize, _count: usize) -> isize {
-            let current = PROCESSOR.get_mut().current().unwrap();
-            tg_console::log::info!(
-                "spawn: parent pid = {}, not implemented",
-                current.pid.get_usize()
-            );
-            -1
+        fn spawn(&self, _caller: Caller, path: usize, count: usize) -> isize {
+            let processor: *mut PManager<ProcStruct, ProcManager> = PROCESSOR.get_mut() as *mut _;
+            let (parent_pid, app_name) = unsafe {
+                let current = (*processor).current().unwrap();
+                (current.pid, read_user_string(current, path, count))
+            };
+            let Some(app_name) = app_name else {
+                log::error!("path not readable");
+                return -1;
+            };
+            let Some(fd) = FS.open(app_name.as_str(), OpenFlags::RDONLY) else {
+                log::error!("unknown app: {app_name}");
+                return -1;
+            };
+            let Some(process) = ProcStruct::from_elf(ElfFile::new(&read_all(fd)).unwrap()) else {
+                return -1;
+            };
+            let pid = process.pid;
+            unsafe {
+                (*processor).add(pid, process, parent_pid);
+            }
+            pid.get_usize() as isize
         }
 
         /// sbrk 系统调用：调整堆大小
@@ -776,16 +883,52 @@ mod impls {
             _fd: i32,
             _offset: usize,
         ) -> isize {
-            tg_console::log::info!(
-                "mmap: addr = {addr:#x}, len = {len}, prot = {prot}, not implemented"
-            );
-            -1
+            const PAGE_SIZE: usize = 1 << Sv39::PAGE_BITS;
+            if addr & (PAGE_SIZE - 1) != 0 || prot < 0 {
+                return -1;
+            }
+            let Some(flags) = user_map_flags(prot as usize) else {
+                return -1;
+            };
+            if len == 0 {
+                return 0;
+            }
+            let Some(end) = addr.checked_add(len) else {
+                return -1;
+            };
+            let range = VAddr::<Sv39>::new(addr).floor()..VAddr::<Sv39>::new(end).ceil();
+            let current = PROCESSOR.get_mut().current().unwrap();
+            if current
+                .address_space
+                .areas
+                .iter()
+                .any(|area| ranges_overlap(area, &range))
+            {
+                return -1;
+            }
+            current.address_space.map(range, &[], 0, flags);
+            0
         }
 
         /// munmap 系统调用（TODO 练习题）
         fn munmap(&self, _caller: Caller, addr: usize, len: usize) -> isize {
-            tg_console::log::info!("munmap: addr = {addr:#x}, len = {len}, not implemented");
-            -1
+            const PAGE_SIZE: usize = 1 << Sv39::PAGE_BITS;
+            if addr & (PAGE_SIZE - 1) != 0 {
+                return -1;
+            }
+            if len == 0 {
+                return 0;
+            }
+            let Some(end) = addr.checked_add(len) else {
+                return -1;
+            };
+            let range = VAddr::<Sv39>::new(addr).floor()..VAddr::<Sv39>::new(end).ceil();
+            let current = PROCESSOR.get_mut().current().unwrap();
+            if !range_is_fully_mapped(&current.address_space.areas, &range) {
+                return -1;
+            }
+            current.address_space.unmap(range);
+            0
         }
     }
 }

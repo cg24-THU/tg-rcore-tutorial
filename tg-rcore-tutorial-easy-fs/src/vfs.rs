@@ -62,6 +62,23 @@ impl Inode {
         None
     }
 
+    /// Find a directory entry and return both its index and inode id.
+    fn find_inode_id_with_index(&self, name: &str, disk_inode: &DiskInode) -> Option<(usize, u32)> {
+        assert!(disk_inode.is_dir());
+        let file_count = (disk_inode.size as usize) / DIRENT_SZ;
+        let mut dirent = DirEntry::empty();
+        for i in 0..file_count {
+            assert_eq!(
+                disk_inode.read_at(DIRENT_SZ * i, dirent.as_bytes_mut(), &self.block_device,),
+                DIRENT_SZ,
+            );
+            if dirent.name() == name {
+                return Some((i, dirent.inode_number()));
+            }
+        }
+        None
+    }
+
     /// Find inode under current inode by name
     pub fn find(&self, name: &str) -> Option<Arc<Inode>> {
         // 目录查找流程：目录 inode -> 遍历 dirent -> 定位子 inode 的磁盘位置。
@@ -77,6 +94,23 @@ impl Inode {
                 ))
             })
         })
+    }
+
+    /// Return the inode id of the current inode.
+    pub fn inode_id(&self) -> u32 {
+        self.fs
+            .lock()
+            .get_inode_id(self.block_id as u32, self.block_offset)
+    }
+
+    /// Return whether the current inode is a directory.
+    pub fn is_dir(&self) -> bool {
+        self.read_disk_inode(|disk_inode| disk_inode.is_dir())
+    }
+
+    /// Return the hard-link count of the current inode.
+    pub fn nlink(&self) -> u32 {
+        self.read_disk_inode(|disk_inode| disk_inode.nlink)
     }
 
     /// Increase the size of a disk inode
@@ -137,6 +171,75 @@ impl Inode {
             self.block_device.clone(),
         )))
         // release efs lock automatically by compiler
+    }
+
+    /// Create a hard link under the current directory.
+    pub fn link(&self, name: &str, inode_id: u32) -> isize {
+        let mut fs = self.fs.lock();
+        if self.read_disk_inode(|disk_inode| self.find_inode_id(name, disk_inode).is_some()) {
+            return -1;
+        }
+        let (inode_block_id, inode_block_offset) = fs.get_disk_inode_pos(inode_id);
+        get_block_cache(inode_block_id as usize, Arc::clone(&self.block_device))
+            .lock()
+            .modify(inode_block_offset, |disk_inode: &mut DiskInode| {
+                disk_inode.nlink += 1;
+            });
+        self.modify_disk_inode(|dir_inode| {
+            let file_count = (dir_inode.size as usize) / DIRENT_SZ;
+            let new_size = (file_count + 1) * DIRENT_SZ;
+            self.increase_size(new_size as u32, dir_inode, &mut fs);
+            let dirent = DirEntry::new(name, inode_id);
+            dir_inode.write_at(file_count * DIRENT_SZ, dirent.as_bytes(), &self.block_device);
+        });
+        block_cache_sync_all();
+        0
+    }
+
+    /// Remove a directory entry and drop one hard link from its inode.
+    pub fn unlink(&self, name: &str) -> isize {
+        let mut fs = self.fs.lock();
+        let Some(inode_id) = self.modify_disk_inode(|dir_inode| {
+            let (idx, inode_id) = self.find_inode_id_with_index(name, dir_inode)?;
+            let file_count = (dir_inode.size as usize) / DIRENT_SZ;
+            if idx + 1 != file_count {
+                let mut last_dirent = DirEntry::empty();
+                assert_eq!(
+                    dir_inode.read_at(
+                        (file_count - 1) * DIRENT_SZ,
+                        last_dirent.as_bytes_mut(),
+                        &self.block_device,
+                    ),
+                    DIRENT_SZ,
+                );
+                dir_inode.write_at(idx * DIRENT_SZ, last_dirent.as_bytes(), &self.block_device);
+            }
+            dir_inode.size -= DIRENT_SZ as u32;
+            Some(inode_id)
+        }) else {
+            return -1;
+        };
+
+        let (inode_block_id, inode_block_offset) = fs.get_disk_inode_pos(inode_id);
+        let reclaimed = get_block_cache(inode_block_id as usize, Arc::clone(&self.block_device))
+            .lock()
+            .modify(inode_block_offset, |disk_inode: &mut DiskInode| {
+                if disk_inode.nlink > 1 {
+                    disk_inode.nlink -= 1;
+                    None
+                } else {
+                    disk_inode.nlink = 0;
+                    Some(disk_inode.clear_size(&self.block_device))
+                }
+            });
+        if let Some(data_blocks) = reclaimed {
+            for block_id in data_blocks {
+                fs.dealloc_data(block_id);
+            }
+            fs.dealloc_inode(inode_id);
+        }
+        block_cache_sync_all();
+        0
     }
 
     /// List inodes by id under current inode

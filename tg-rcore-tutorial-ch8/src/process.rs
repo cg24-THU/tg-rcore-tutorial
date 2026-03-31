@@ -27,7 +27,14 @@ use crate::{
     build_flags, fs::Fd, map_portal, parse_flags, processor::ProcessorInner, Sv39, Sv39Manager,
     PROCESSOR,
 };
-use alloc::{alloc::alloc_zeroed, boxed::Box, sync::Arc, vec::Vec};
+use alloc::{
+    alloc::alloc_zeroed,
+    boxed::Box,
+    collections::BTreeMap,
+    sync::Arc,
+    vec,
+    vec::Vec,
+};
 use core::alloc::Layout;
 use spin::Mutex;
 use tg_kernel_context::{foreign::ForeignContext, LocalContext};
@@ -84,6 +91,218 @@ pub struct Process {
     pub mutex_list: Vec<Option<Arc<dyn MutexTrait>>>,
     /// 条件变量列表（**本章新增**，所有线程共享）
     pub condvar_list: Vec<Option<Arc<Condvar>>>,
+    /// 死锁检测所需的资源分配状态
+    pub deadlock: DeadlockState,
+}
+
+/// 每个进程独立维护的死锁检测状态。
+#[derive(Default)]
+pub struct DeadlockState {
+    /// 是否启用死锁检测
+    pub enabled: bool,
+    /// 每类 semaphore 的资源总量
+    semaphore_total: Vec<usize>,
+    /// semaphore 分配矩阵：线程 -> 各类资源持有数
+    semaphore_alloc: BTreeMap<ThreadId, Vec<usize>>,
+    /// semaphore 需求矩阵：线程 -> 当前阻塞等待的资源数
+    semaphore_need: BTreeMap<ThreadId, Vec<usize>>,
+    /// mutex 当前持有者
+    mutex_owner: Vec<Option<ThreadId>>,
+    /// mutex 等待关系：线程 -> 正在等待的 mutex id
+    mutex_wait: BTreeMap<ThreadId, usize>,
+}
+
+impl DeadlockState {
+    fn ensure_sem_row(
+        rows: &mut BTreeMap<ThreadId, Vec<usize>>,
+        tid: ThreadId,
+        width: usize,
+    ) -> &mut Vec<usize> {
+        let row = rows.entry(tid).or_insert_with(|| vec![0; width]);
+        if row.len() < width {
+            row.resize(width, 0);
+        }
+        row
+    }
+
+    fn trim_sem_row(rows: &mut BTreeMap<ThreadId, Vec<usize>>, tid: ThreadId) {
+        if rows.get(&tid).is_some_and(|row| row.iter().all(|&v| v == 0)) {
+            rows.remove(&tid);
+        }
+    }
+
+    /// 注册新的 semaphore 资源类型，返回其资源 id。
+    pub fn register_semaphore(&mut self, total: usize) -> usize {
+        self.semaphore_total.push(total);
+        let new_width = self.semaphore_total.len();
+        self.semaphore_alloc
+            .values_mut()
+            .for_each(|row| row.resize(new_width, 0));
+        self.semaphore_need
+            .values_mut()
+            .for_each(|row| row.resize(new_width, 0));
+        new_width - 1
+    }
+
+    /// 注册新的 mutex 资源类型，返回其资源 id。
+    pub fn register_mutex(&mut self) -> usize {
+        self.mutex_owner.push(None);
+        self.mutex_owner.len() - 1
+    }
+
+    /// 记录一次 semaphore 立即成功的获取。
+    pub fn semaphore_acquired(&mut self, tid: ThreadId, sem_id: usize) {
+        let width = self.semaphore_total.len();
+        let row = Self::ensure_sem_row(&mut self.semaphore_alloc, tid, width);
+        row[sem_id] += 1;
+    }
+
+    /// 记录一次 semaphore 阻塞等待。
+    pub fn semaphore_wait(&mut self, tid: ThreadId, sem_id: usize) {
+        let width = self.semaphore_total.len();
+        let row = Self::ensure_sem_row(&mut self.semaphore_need, tid, width);
+        row[sem_id] += 1;
+    }
+
+    /// 清除一次 semaphore 阻塞等待。
+    pub fn semaphore_cancel_wait(&mut self, tid: ThreadId, sem_id: usize) {
+        if let Some(row) = self.semaphore_need.get_mut(&tid) {
+            if sem_id < row.len() && row[sem_id] > 0 {
+                row[sem_id] -= 1;
+            }
+        }
+        Self::trim_sem_row(&mut self.semaphore_need, tid);
+    }
+
+    /// 记录一次 semaphore 释放；若唤醒了线程，则资源立即转交给对方。
+    pub fn semaphore_release(
+        &mut self,
+        tid: ThreadId,
+        sem_id: usize,
+        waking_tid: Option<ThreadId>,
+    ) {
+        if let Some(row) = self.semaphore_alloc.get_mut(&tid) {
+            if sem_id < row.len() && row[sem_id] > 0 {
+                row[sem_id] -= 1;
+            }
+        }
+        Self::trim_sem_row(&mut self.semaphore_alloc, tid);
+        if let Some(waking_tid) = waking_tid {
+            self.semaphore_cancel_wait(waking_tid, sem_id);
+            self.semaphore_acquired(waking_tid, sem_id);
+        }
+    }
+
+    /// 计算当前可用资源向量。
+    fn semaphore_available(&self) -> Vec<usize> {
+        let mut available = self.semaphore_total.clone();
+        for row in self.semaphore_alloc.values() {
+            for (idx, count) in row.iter().enumerate() {
+                available[idx] = available[idx].saturating_sub(*count);
+            }
+        }
+        available
+    }
+
+    /// 检查把当前 semaphore 请求加入等待矩阵后是否会进入不安全状态。
+    pub fn semaphore_would_deadlock(
+        &self,
+        active_threads: &[ThreadId],
+        tid: ThreadId,
+        sem_id: usize,
+    ) -> bool {
+        let width = self.semaphore_total.len();
+        if sem_id >= width {
+            return false;
+        }
+        let mut work = self.semaphore_available();
+        let mut finish = vec![false; active_threads.len()];
+        loop {
+            let mut progressed = false;
+            for (idx, thread_id) in active_threads.iter().copied().enumerate() {
+                if finish[idx] {
+                    continue;
+                }
+                let mut need = self
+                    .semaphore_need
+                    .get(&thread_id)
+                    .cloned()
+                    .unwrap_or_else(|| vec![0; width]);
+                if thread_id == tid {
+                    need[sem_id] += 1;
+                }
+                if need.iter().zip(work.iter()).all(|(need, work)| need <= work) {
+                    let alloc = self
+                        .semaphore_alloc
+                        .get(&thread_id)
+                        .cloned()
+                        .unwrap_or_else(|| vec![0; width]);
+                    for (work_item, alloc_item) in work.iter_mut().zip(alloc.iter()) {
+                        *work_item += *alloc_item;
+                    }
+                    finish[idx] = true;
+                    progressed = true;
+                }
+            }
+            if !progressed {
+                break;
+            }
+        }
+        finish.iter().any(|finished| !finished)
+    }
+
+    /// 记录一次 mutex 成功获取。
+    pub fn mutex_acquired(&mut self, tid: ThreadId, mutex_id: usize) {
+        self.mutex_wait.remove(&tid);
+        self.mutex_owner[mutex_id] = Some(tid);
+    }
+
+    /// 记录一次 mutex 阻塞等待。
+    pub fn mutex_wait(&mut self, tid: ThreadId, mutex_id: usize) {
+        self.mutex_wait.insert(tid, mutex_id);
+    }
+
+    /// 记录一次 mutex 释放；若唤醒了线程，则所有权立即转交给对方。
+    pub fn mutex_release(
+        &mut self,
+        tid: ThreadId,
+        mutex_id: usize,
+        waking_tid: Option<ThreadId>,
+    ) {
+        if self.mutex_owner.get(mutex_id).copied().flatten() == Some(tid) {
+            if let Some(waking_tid) = waking_tid {
+                self.mutex_wait.remove(&waking_tid);
+                self.mutex_owner[mutex_id] = Some(waking_tid);
+            } else {
+                self.mutex_owner[mutex_id] = None;
+            }
+        }
+    }
+
+    /// 检查当前线程等待 mutex 时是否形成等待环。
+    pub fn mutex_would_deadlock(&self, tid: ThreadId, mutex_id: usize) -> bool {
+        let Some(mut holder) = self.mutex_owner.get(mutex_id).copied().flatten() else {
+            return false;
+        };
+        loop {
+            if holder == tid {
+                return true;
+            }
+            let Some(wait_mutex_id) = self.mutex_wait.get(&holder).copied() else {
+                return false;
+            };
+            let Some(next_holder) = self.mutex_owner.get(wait_mutex_id).copied().flatten() else {
+                return false;
+            };
+            holder = next_holder;
+        }
+    }
+
+    /// 清理线程的等待状态，避免残留的需求边影响后续检测。
+    pub fn on_thread_exit(&mut self, tid: ThreadId) {
+        self.semaphore_need.remove(&tid);
+        self.mutex_wait.remove(&tid);
+    }
 }
 
 impl Process {
@@ -134,6 +353,7 @@ impl Process {
                 semaphore_list: Vec::new(),
                 mutex_list: Vec::new(),
                 condvar_list: Vec::new(),
+                deadlock: DeadlockState::default(),
             },
             thread,
         ))
@@ -206,6 +426,7 @@ impl Process {
                 semaphore_list: Vec::new(),
                 mutex_list: Vec::new(),
                 condvar_list: Vec::new(),
+                deadlock: DeadlockState::default(),
             },
             thread,
         ))

@@ -154,28 +154,30 @@ impl LocalContext {
             let old_sscratch: usize;
             // 第二步：切换到 execute_naked，执行真正的上下文保存/恢复。
             // SAFETY: 内联汇编执行上下文切换，调用者已确保处于 S 模式且 CSR 可被修改
-            core::arch::asm!(
-                "   csrrw {old_ss}, sscratch, {ctx}
-                    csrw  sepc    , {sepc}
-                    csrw  sstatus , {sstatus}
-                    addi  sp, sp, -8
-                    sd    ra, (sp)
-                    call  {execute_naked}
-                    ld    ra, (sp)
-                    addi  sp, sp,  8
-                    csrw  sscratch, {old_ss}
-                    csrr  {sepc}   , sepc
-                    csrr  {sstatus}, sstatus
-                ",
-                ctx           = in       (reg) ctx_ptr,
-                old_ss        = out      (reg) old_sscratch,
-                sepc          = inlateout(reg) sepc,
-                sstatus       = inlateout(reg) sstatus,
-                execute_naked = sym execute_naked,
-            );
+            unsafe {
+                core::arch::asm!(
+                    "   csrrw {old_ss}, sscratch, {ctx}
+                        csrw  sepc    , {sepc}
+                        csrw  sstatus , {sstatus}
+                        addi  sp, sp, -8
+                        sd    ra, (sp)
+                        call  {execute_naked}
+                        ld    ra, (sp)
+                        addi  sp, sp,  8
+                        csrw  sscratch, {old_ss}
+                        csrr  {sepc}   , sepc
+                        csrr  {sstatus}, sstatus
+                    ",
+                    ctx           = in       (reg) ctx_ptr,
+                    old_ss        = out      (reg) old_sscratch,
+                    sepc          = inlateout(reg) sepc,
+                    sstatus       = inlateout(reg) sstatus,
+                    execute_naked = sym execute_naked,
+                );
+            }
             let _ = old_sscratch; // suppress unused warning
             // 第三步：取回线程返回后的 sepc（比如 trap 后已更新到下一条指令）。
-            (*ctx_ptr).sepc = sepc;
+            unsafe { (*ctx_ptr).sepc = sepc };
             sstatus
         }
         #[cfg(not(target_arch = "riscv64"))]

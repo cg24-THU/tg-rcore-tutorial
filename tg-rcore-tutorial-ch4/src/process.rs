@@ -21,17 +21,22 @@
 
 use crate::{build_flags, parse_flags, Sv39, Sv39Manager};
 use alloc::alloc::alloc_zeroed;
+use alloc::collections::BTreeMap;
+use alloc::vec;
+use alloc::vec::Vec;
 use core::alloc::Layout;
 use tg_console::log;
 use tg_kernel_context::{foreign::ForeignContext, LocalContext};
 use tg_kernel_vm::{
-    page_table::{MmuMeta, VAddr, PPN, VPN},
+    page_table::{MmuMeta, VAddr, VmFlags, PPN, VPN},
     AddressSpace,
 };
 use xmas_elf::{
     header::{self, HeaderPt2, Machine},
     program, ElfFile,
 };
+
+const MAX_SYSCALL_NUM: usize = 512;
 
 /// 进程结构体
 ///
@@ -49,6 +54,8 @@ pub struct Process {
     pub heap_bottom: usize,
     /// 当前程序 break 位置（堆顶）
     pub program_brk: usize,
+    /// 当前进程各系统调用的调用次数
+    syscall_times: Vec<usize>,
 }
 
 impl Process {
@@ -77,6 +84,8 @@ impl Process {
 
         let mut address_space = AddressSpace::new();
         let mut max_end_va: usize = 0;
+        let mut page_flags = BTreeMap::<VPN<Sv39>, VmFlags<Sv39>>::new();
+        let mut load_segments = Vec::new();
 
         // 遍历 ELF 的 LOAD 段，映射到地址空间
         for program in elf.program_iter() {
@@ -107,13 +116,35 @@ impl Process {
             if program.flags().is_read() {
                 flags[3] = b'R';
             }
-            // 将 ELF 段的数据映射到地址空间
-            address_space.map(
-                VAddr::new(off_mem).floor()..VAddr::new(end_mem).ceil(),
-                &elf.input[off_file..][..len_file],
-                off_mem & PAGE_MASK,
-                parse_flags(unsafe { core::str::from_utf8_unchecked(&flags) }).unwrap(),
-            );
+            let flags = parse_flags(unsafe { core::str::from_utf8_unchecked(&flags) }).unwrap();
+            let vpn_range = VAddr::new(off_mem).floor()..VAddr::new(end_mem).ceil();
+            let mut vpn = vpn_range.start;
+            while vpn < vpn_range.end {
+                page_flags
+                    .entry(vpn)
+                    .and_modify(|page_flag| *page_flag |= flags)
+                    .or_insert(flags);
+                vpn = vpn + 1;
+            }
+            load_segments.push((off_mem, &elf.input[off_file..][..len_file]));
+        }
+
+        for (vpn, flags) in page_flags {
+            address_space.map(vpn..vpn + 1, &[], 0, flags);
+        }
+
+        for (start, data) in load_segments {
+            let mut copied = 0usize;
+            while copied < data.len() {
+                let addr = VAddr::<Sv39>::new(start + copied);
+                let copy_len = (PAGE_SIZE - addr.offset()).min(data.len() - copied);
+                let mut ptr = address_space.translate::<u8>(addr, VmFlags::VALID).unwrap();
+                unsafe {
+                    core::slice::from_raw_parts_mut(ptr.as_mut(), copy_len)
+                        .copy_from_slice(&data[copied..copied + copy_len]);
+                }
+                copied += copy_len;
+            }
         }
 
         // 堆底从 ELF 加载的最高地址的下一页开始
@@ -150,6 +181,7 @@ impl Process {
             address_space,
             heap_bottom,
             program_brk: heap_bottom,
+            syscall_times: vec![0; MAX_SYSCALL_NUM],
         })
     }
 
@@ -186,5 +218,21 @@ impl Process {
 
         self.program_brk = new_brk;
         Some(old_brk)
+    }
+
+    /// 记录一次系统调用
+    pub fn record_syscall(&mut self, syscall_id: usize) {
+        if syscall_id < MAX_SYSCALL_NUM {
+            self.syscall_times[syscall_id] += 1;
+        }
+    }
+
+    /// 查询某个系统调用的调用次数
+    pub fn syscall_times(&self, syscall_id: usize) -> usize {
+        if syscall_id < MAX_SYSCALL_NUM {
+            self.syscall_times[syscall_id]
+        } else {
+            0
+        }
     }
 }

@@ -23,7 +23,7 @@
 //! - 最后结合 `ch5/src/main.rs` 中对 `PROCESSOR` 的调用观察状态流转。
 
 use crate::process::Process;
-use alloc::collections::{BTreeMap, VecDeque};
+use alloc::{collections::BTreeMap, vec::Vec};
 use core::cell::UnsafeCell;
 use tg_task_manage::{Manage, PManager, ProcId, Schedule};
 
@@ -61,12 +61,12 @@ pub static PROCESSOR: Processor = Processor::new();
 /// - `tasks`：以 ProcId 为键的进程映射表，存储所有进程实体
 /// - `ready_queue`：就绪队列，存储等待执行的进程 PID
 ///
-/// 当前使用 FIFO/RR 调度策略。练习题要求改为 stride 调度算法。
+/// 练习题要求将调度策略升级为 stride 调度算法。
 pub struct ProcManager {
     /// 所有进程实体的映射表
     tasks: BTreeMap<ProcId, Process>,
-    /// 就绪队列（FIFO 调度）
-    ready_queue: VecDeque<ProcId>,
+    /// 就绪队列
+    ready_queue: Vec<ProcId>,
 }
 
 impl ProcManager {
@@ -74,7 +74,7 @@ impl ProcManager {
     pub fn new() -> Self {
         Self {
             tasks: BTreeMap::new(),
-            ready_queue: VecDeque::new(),
+            ready_queue: Vec::new(),
         }
     }
 }
@@ -100,15 +100,37 @@ impl Manage<Process, ProcId> for ProcManager {
     }
 }
 
-/// 实现 Schedule trait：进程调度（当前为 FIFO/RR）
+/// 实现 Schedule trait：进程调度（stride 调度）
 impl Schedule<ProcId> for ProcManager {
-    /// 将进程加入就绪队列尾部
+    /// 将进程加入就绪队列
     fn add(&mut self, id: ProcId) {
-        self.ready_queue.push_back(id);
+        if !self.ready_queue.contains(&id) {
+            self.ready_queue.push(id);
+        }
     }
 
-    /// 从就绪队列头部取出下一个要执行的进程
+    /// 选择当前 stride 最小的进程执行，并推进其 stride
     fn fetch(&mut self) -> Option<ProcId> {
-        self.ready_queue.pop_front()
+        let mut best: Option<(usize, u128, ProcId)> = None;
+        for (idx, &id) in self.ready_queue.iter().enumerate() {
+            let Some(task) = self.tasks.get(&id) else {
+                continue;
+            };
+            match best {
+                Some((_, best_stride, best_id))
+                    if task.stride > best_stride
+                        || (task.stride == best_stride && id > best_id) => {}
+                _ => best = Some((idx, task.stride, id)),
+            }
+        }
+
+        let (idx, _, id) = best?;
+        self.ready_queue.remove(idx);
+        if let Some(task) = self.tasks.get_mut(&id) {
+            task.advance_stride();
+            Some(id)
+        } else {
+            None
+        }
     }
 }

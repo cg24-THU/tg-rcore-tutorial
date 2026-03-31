@@ -25,7 +25,7 @@ use alloc::alloc::alloc_zeroed;
 use core::alloc::Layout;
 use tg_kernel_context::{foreign::ForeignContext, LocalContext};
 use tg_kernel_vm::{
-    page_table::{MmuMeta, VAddr, PPN, VPN},
+    page_table::{MmuMeta, VAddr, VmFlags, PPN, VPN},
     AddressSpace,
 };
 use tg_task_manage::ProcId;
@@ -50,6 +50,10 @@ pub struct Process {
     pub heap_bottom: usize,
     /// 当前程序 break 位置（堆顶），通过 sbrk 调整
     pub program_brk: usize,
+    /// 调度优先级，值越大获得的 CPU 时间越多
+    pub priority: usize,
+    /// stride 调度中的当前累计步长
+    pub stride: u128,
 }
 
 impl Process {
@@ -89,6 +93,8 @@ impl Process {
             address_space,
             heap_bottom: self.heap_bottom,
             program_brk: self.program_brk,
+            priority: self.priority,
+            stride: self.stride,
         })
     }
 
@@ -192,6 +198,8 @@ impl Process {
             address_space,
             heap_bottom,
             program_brk: heap_bottom,
+            priority: 16,
+            stride: 0,
         })
     }
 
@@ -229,5 +237,107 @@ impl Process {
 
         self.program_brk = new_brk;
         Some(old_brk)
+    }
+
+    /// 返回当前优先级对应的 stride 步长。
+    #[inline]
+    pub fn pass(&self) -> u128 {
+        const BIG_STRIDE: u128 = 1u128 << 63;
+        BIG_STRIDE / self.priority as u128
+    }
+
+    /// 在一次调度选中后推进当前进程的 stride。
+    #[inline]
+    pub fn advance_stride(&mut self) {
+        self.stride = self.stride.saturating_add(self.pass());
+    }
+
+    /// 设置当前进程优先级。
+    #[inline]
+    pub fn set_priority(&mut self, priority: usize) {
+        self.priority = priority;
+    }
+
+    /// 为当前进程映射匿名内存。
+    pub fn mmap(&mut self, start: usize, len: usize, prot: usize) -> bool {
+        const PAGE_SIZE: usize = 1 << Sv39::PAGE_BITS;
+
+        if start & (PAGE_SIZE - 1) != 0 {
+            return false;
+        }
+        if prot == 0 || prot & !0x7 != 0 {
+            return false;
+        }
+        if len == 0 {
+            return true;
+        }
+
+        let end = if let Some(end) = start.checked_add(len) {
+            end
+        } else {
+            return false;
+        };
+        let start_vpn = VAddr::<Sv39>::new(start).floor();
+        let end_vpn = VAddr::<Sv39>::new(end).ceil();
+
+        if self
+            .address_space
+            .areas
+            .iter()
+            .any(|area| area.start < end_vpn && start_vpn < area.end)
+        {
+            return false;
+        }
+
+        let mut flags: [u8; 5] = *b"U___V";
+        if prot & 0x4 != 0 {
+            flags[1] = b'X';
+        }
+        if prot & 0x2 != 0 {
+            flags[2] = b'W';
+        }
+        if prot & 0x1 != 0 {
+            flags[3] = b'R';
+        }
+        let flags: VmFlags<Sv39> =
+            parse_flags(core::str::from_utf8(&flags).unwrap()).unwrap();
+        self.address_space.map(start_vpn..end_vpn, &[], 0, flags);
+        true
+    }
+
+    /// 取消当前进程的一段匿名映射。
+    pub fn munmap(&mut self, start: usize, len: usize) -> bool {
+        const PAGE_SIZE: usize = 1 << Sv39::PAGE_BITS;
+
+        if start & (PAGE_SIZE - 1) != 0 {
+            return false;
+        }
+        if len == 0 {
+            return true;
+        }
+
+        let end = if let Some(end) = start.checked_add(len) {
+            end
+        } else {
+            return false;
+        };
+        let start_vpn = VAddr::<Sv39>::new(start).floor();
+        let end_vpn = VAddr::<Sv39>::new(end).ceil();
+
+        let mut vpn = start_vpn;
+        while vpn < end_vpn {
+            if !self
+                .address_space
+                .areas
+                .iter()
+                .any(|area| area.start <= vpn && vpn < area.end)
+            {
+                return false;
+            }
+            vpn = vpn + 1;
+        }
+
+        self.address_space.unmap(start_vpn..end_vpn);
+        true
     }
 }

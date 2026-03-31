@@ -15,8 +15,30 @@
 //! - 再看 `handle_syscall`：理解系统调用结果如何映射成调度事件；
 //! - 最后对照 `ch3/src/main.rs`：把“事件生成”和“事件消费”串成闭环。
 
+use core::ptr;
 use tg_kernel_context::LocalContext;
 use tg_syscall::{Caller, SyscallId};
+
+/// 每个任务最多记录的不同 syscall 编号数量。
+///
+/// 第三章测试只会涉及少量 syscall，使用稀疏表即可避免把大数组塞进 TCB，
+/// 从而挤爆 `rust_main` 的内核栈。
+const SYSCALL_RECORD_CAPACITY: usize = 16;
+
+#[derive(Clone, Copy)]
+struct SyscallCounterSlot {
+    id: SyscallId,
+    count: usize,
+}
+
+impl SyscallCounterSlot {
+    const ZERO: Self = Self {
+        id: SyscallId(0),
+        count: 0,
+    };
+}
+
+static mut CURRENT_TASK: *mut TaskControlBlock = ptr::null_mut();
 
 /// 任务控制块（Task Control Block, TCB）
 ///
@@ -32,6 +54,8 @@ pub struct TaskControlBlock {
     /// 用户栈：8 KiB（1024 个 usize = 1024 × 8 = 8192 字节）
     /// 每个任务拥有独立的栈空间，避免栈溢出影响其他任务
     stack: [usize; 1024],
+    /// 当前任务已经出现过的 syscall 计数表。
+    syscall_counters: [SyscallCounterSlot; SYSCALL_RECORD_CAPACITY],
 }
 
 /// 调度事件
@@ -55,6 +79,7 @@ impl TaskControlBlock {
         ctx: LocalContext::empty(),
         finish: false,
         stack: [0; 1024],
+        syscall_counters: [SyscallCounterSlot::ZERO; SYSCALL_RECORD_CAPACITY],
     };
 
     /// 初始化一个任务
@@ -65,6 +90,7 @@ impl TaskControlBlock {
     pub fn init(&mut self, entry: usize) {
         self.stack.fill(0);
         self.finish = false;
+        self.syscall_counters.fill(SyscallCounterSlot::ZERO);
         self.ctx = LocalContext::user(entry);
         // 栈从高地址向低地址增长，所以 sp 指向栈顶（数组末尾之后的地址）
         *self.ctx.sp_mut() = self.stack.as_ptr() as usize + core::mem::size_of_val(&self.stack);
@@ -98,7 +124,11 @@ impl TaskControlBlock {
             self.ctx.a(4),
             self.ctx.a(5),
         ];
-        match tg_syscall::handle(Caller { entity: 0, flow: 0 }, id, args) {
+        self.record_syscall(id);
+        set_current_task(self as *mut _);
+        let result = tg_syscall::handle(Caller { entity: 0, flow: 0 }, id, args);
+        set_current_task(ptr::null_mut());
+        match result {
             Ret::Done(ret) => match id {
                 // exit 系统调用：返回退出事件
                 Id::EXIT => Event::Exit(self.ctx.a(0)),
@@ -118,5 +148,43 @@ impl TaskControlBlock {
             // 不支持的系统调用
             Ret::Unsupported(_) => Event::UnsupportedSyscall(id),
         }
+    }
+
+    fn record_syscall(&mut self, id: SyscallId) {
+        for slot in &mut self.syscall_counters {
+            if slot.count != 0 && slot.id == id {
+                slot.count += 1;
+                return;
+            }
+        }
+        for slot in &mut self.syscall_counters {
+            if slot.count == 0 {
+                *slot = SyscallCounterSlot { id, count: 1 };
+                return;
+            }
+        }
+    }
+
+    /// 查询当前任务某个 syscall 号的累计调用次数。
+    pub(super) fn syscall_count(&self, id: usize) -> usize {
+        self.syscall_counters
+            .iter()
+            .find(|slot| slot.count != 0 && slot.id.0 == id)
+            .map_or(0, |slot| slot.count)
+    }
+}
+
+#[inline]
+fn set_current_task(task: *mut TaskControlBlock) {
+    unsafe { CURRENT_TASK = task };
+}
+
+/// 返回当前正在内核中处理 syscall 的任务。
+pub(super) fn current_task() -> Option<&'static mut TaskControlBlock> {
+    let task = unsafe { CURRENT_TASK };
+    if task.is_null() {
+        None
+    } else {
+        Some(unsafe { &mut *task })
     }
 }

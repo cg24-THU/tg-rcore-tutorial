@@ -643,14 +643,31 @@ mod impls {
         /// 与 fork+exec 不同，spawn 直接从 ELF 创建新进程，
         /// 无需复制父进程地址空间。
         ///
-        /// TODO: 实现 spawn 系统调用（练习题）
-        fn spawn(&self, _caller: Caller, _path: usize, _count: usize) -> isize {
-            let current = PROCESSOR.get_mut().current().unwrap();
-            tg_console::log::info!(
-                "spawn: parent pid = {}, not implemented",
-                current.pid.get_usize()
-            );
-            -1
+        fn spawn(&self, _caller: Caller, path: usize, count: usize) -> isize {
+            const READABLE: VmFlags<Sv39> = build_flags("RV");
+            let processor: *mut PManager<ProcStruct, ProcManager> = PROCESSOR.get_mut() as *mut _;
+            let (parent_pid, elf) = {
+                let current = unsafe { (*processor).current().unwrap() };
+                let parent_pid = current.pid;
+                let elf = current
+                    .address_space
+                    .translate::<u8>(VAddr::new(path), READABLE)
+                    .map(|ptr| unsafe {
+                        core::str::from_utf8_unchecked(core::slice::from_raw_parts(
+                            ptr.as_ptr(),
+                            count,
+                        ))
+                    })
+                    .and_then(|name| APPS.get(name))
+                    .and_then(|input| ElfFile::new(input).ok());
+                (parent_pid, elf)
+            };
+
+            elf.and_then(ProcStruct::from_elf).map_or(-1, |child_proc| {
+                let pid = child_proc.pid;
+                unsafe { (*processor).add(pid, child_proc, parent_pid) };
+                pid.get_usize() as isize
+            })
         }
 
         /// sbrk 系统调用：调整进程堆空间大小
@@ -678,15 +695,13 @@ mod impls {
 
         /// set_priority 系统调用：设置当前进程优先级
         ///
-        /// TODO: 实现 set_priority 系统调用（练习题：stride 调度算法）
         fn set_priority(&self, _caller: Caller, prio: isize) -> isize {
+            if prio < 2 {
+                return -1;
+            }
             let current = PROCESSOR.get_mut().current().unwrap();
-            tg_console::log::info!(
-                "set_priority: pid = {}, prio = {}, not implemented",
-                current.pid.get_usize(),
-                prio
-            );
-            -1
+            current.set_priority(prio as usize);
+            prio
         }
     }
 
@@ -728,7 +743,6 @@ mod impls {
     impl Memory for SyscallContext {
         /// mmap 系统调用：映射匿名内存
         ///
-        /// TODO: 实现 mmap 系统调用（练习题）
         fn mmap(
             &self,
             _caller: Caller,
@@ -739,18 +753,22 @@ mod impls {
             _fd: i32,
             _offset: usize,
         ) -> isize {
-            tg_console::log::info!(
-                "mmap: addr = {addr:#x}, len = {len}, prot = {prot}, not implemented"
-            );
-            -1
+            if prot < 0 {
+                return -1;
+            }
+            let current = PROCESSOR.get_mut().current().unwrap();
+            if current.mmap(addr, len, prot as usize) {
+                0
+            } else {
+                -1
+            }
         }
 
         /// munmap 系统调用：取消内存映射
         ///
-        /// TODO: 实现 munmap 系统调用（练习题）
         fn munmap(&self, _caller: Caller, addr: usize, len: usize) -> isize {
-            tg_console::log::info!("munmap: addr = {addr:#x}, len = {len}, not implemented");
-            -1
+            let current = PROCESSOR.get_mut().current().unwrap();
+            if current.munmap(addr, len) { 0 } else { -1 }
         }
     }
 }

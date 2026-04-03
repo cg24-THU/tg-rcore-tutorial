@@ -85,6 +85,10 @@ pub struct Process {
     pub fd_table: Vec<Option<Mutex<Fd>>>,
     /// 信号处理器
     pub signal: Box<dyn Signal>,
+    /// 堆底地址
+    pub heap_bottom: usize,
+    /// 当前程序 break 位置
+    pub program_brk: usize,
     /// 信号量列表（**本章新增**，所有线程共享）
     pub semaphore_list: Vec<Option<Arc<Semaphore>>>,
     /// 互斥锁列表（**本章新增**，所有线程共享）
@@ -312,6 +316,8 @@ impl Process {
     pub fn exec(&mut self, elf: ElfFile) {
         let (proc, thread) = Process::from_elf(elf).unwrap();
         self.address_space = proc.address_space;
+        self.heap_bottom = proc.heap_bottom;
+        self.program_brk = proc.program_brk;
         let processor: *mut ProcessorInner = PROCESSOR.get_mut() as *mut ProcessorInner;
         unsafe {
             let pthreads = (*processor).get_thread(self.pid).unwrap();
@@ -349,6 +355,8 @@ impl Process {
                 address_space,
                 fd_table: new_fd_table,
                 signal: self.signal.from_fork(),
+                heap_bottom: self.heap_bottom,
+                program_brk: self.program_brk,
                 // 子进程的同步原语列表初始为空
                 semaphore_list: Vec::new(),
                 mutex_list: Vec::new(),
@@ -375,6 +383,7 @@ impl Process {
         const PAGE_MASK: usize = PAGE_SIZE - 1;
 
         let mut address_space = AddressSpace::new();
+        let mut max_end_va: usize = 0;
         for program in elf.program_iter() {
             if !matches!(program.get_type(), Ok(program::Type::Load)) { continue; }
             let off_file = program.offset() as usize;
@@ -382,6 +391,9 @@ impl Process {
             let off_mem = program.virtual_addr() as usize;
             let end_mem = off_mem + program.mem_size() as usize;
             assert_eq!(off_file & PAGE_MASK, off_mem & PAGE_MASK);
+            if end_mem > max_end_va {
+                max_end_va = end_mem;
+            }
             let mut flags: [u8; 5] = *b"U___V";
             if program.flags().is_execute() { flags[1] = b'X'; }
             if program.flags().is_write() { flags[2] = b'W'; }
@@ -393,6 +405,7 @@ impl Process {
                 parse_flags(unsafe { core::str::from_utf8_unchecked(&flags) }).unwrap(),
             );
         }
+        let heap_bottom = VAddr::<Sv39>::new(max_end_va).ceil().base().val();
         // 分配 2 页用户栈
         let stack = unsafe {
             alloc_zeroed(Layout::from_size_align_unchecked(
@@ -423,6 +436,8 @@ impl Process {
                     Some(Mutex::new(Fd::Empty { read: false, write: true })),
                 ],
                 signal: Box::new(SignalImpl::new()),
+                heap_bottom,
+                program_brk: heap_bottom,
                 semaphore_list: Vec::new(),
                 mutex_list: Vec::new(),
                 condvar_list: Vec::new(),
@@ -430,5 +445,30 @@ impl Process {
             },
             thread,
         ))
+    }
+
+    /// 修改程序 break 位置（实现 sbrk）
+    pub fn change_program_brk(&mut self, size: isize) -> Option<usize> {
+        let old_brk = self.program_brk;
+        let new_brk = self.program_brk as isize + size;
+        if new_brk < self.heap_bottom as isize {
+            return None;
+        }
+        let new_brk = new_brk as usize;
+
+        let old_brk_ceil = VAddr::<Sv39>::new(old_brk).ceil();
+        let new_brk_ceil = VAddr::<Sv39>::new(new_brk).ceil();
+
+        if size > 0 {
+            if new_brk_ceil.val() > old_brk_ceil.val() {
+                self.address_space
+                    .map(old_brk_ceil..new_brk_ceil, &[], 0, build_flags("U_WRV"));
+            }
+        } else if size < 0 && old_brk_ceil.val() > new_brk_ceil.val() {
+            self.address_space.unmap(new_brk_ceil..old_brk_ceil);
+        }
+
+        self.program_brk = new_brk;
+        Some(old_brk)
     }
 }

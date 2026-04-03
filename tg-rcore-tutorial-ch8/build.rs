@@ -20,6 +20,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=TG_USER_CRATE");
     println!("cargo:rerun-if-env-changed=TG_USER_LOCAL_DIR");
     println!("cargo:rerun-if-env-changed=TG_SKIP_USER_APPS");
+    println!("cargo:rerun-if-env-changed=TG_DOOM_WAD");
     println!("cargo:rerun-if-env-changed=CARGO_FEATURE_EXERCISE");
 
     let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
@@ -159,11 +160,7 @@ impl BlockDevice for BlockFile {
     }
 }
 
-fn easy_fs_pack(
-    cases: &[String],
-    app_target: &PathBuf,
-    fs_target: &PathBuf,
-) -> std::io::Result<()> {
+fn easy_fs_pack(cases: &[String], app_target: &PathBuf, fs_target: &PathBuf) -> std::io::Result<()> {
     use std::fs::OpenOptions;
     use std::io::Read;
     use std::sync::Arc;
@@ -192,7 +189,47 @@ fn easy_fs_pack(
         inode.write_at(0, all_data.as_slice());
     }
 
+    if let Some(wad_path) = find_doom_wad() {
+        println!("cargo:warning=packing Doom IWAD from {}", wad_path.display());
+        let mut host_file = std::fs::File::open(&wad_path)?;
+        let mut all_data: Vec<u8> = Vec::new();
+        host_file.read_to_end(&mut all_data)?;
+        let inode = root_inode.create("doom1.wad").unwrap();
+        inode.write_at(0, all_data.as_slice());
+    } else {
+        println!("cargo:warning=no Doom IWAD found; install doom-wad-shareware or set TG_DOOM_WAD");
+    }
+
     Ok(())
+}
+
+fn find_doom_wad() -> Option<PathBuf> {
+    if let Ok(path) = env::var("TG_DOOM_WAD") {
+        let path = PathBuf::from(path);
+        if path.exists() {
+            println!("cargo:rerun-if-changed={}", path.display());
+            return Some(path);
+        }
+    }
+
+    const CANDIDATES: &[&str] = &[
+        "/usr/share/games/doom/doom1.wad",
+        "/usr/share/doom/doom1.wad",
+        "/usr/share/games/doom/DOOM1.WAD",
+        "/usr/share/doom/DOOM1.WAD",
+        "/usr/share/games/doom-wad-shareware/doom1.wad",
+        "/usr/share/games/freedoom/freedoom1.wad",
+        "/usr/share/games/freedoom/freedoom2.wad",
+    ];
+
+    for path in CANDIDATES {
+        let path = PathBuf::from(path);
+        if path.exists() {
+            println!("cargo:rerun-if-changed={}", path.display());
+            return Some(path);
+        }
+    }
+    None
 }
 
 fn ensure_tg_user() -> PathBuf {
@@ -204,6 +241,17 @@ fn ensure_tg_user() -> PathBuf {
         }
     }
 
+    // 其次优先复用仓库中的兄弟目录，而不是在构建时尝试 cargo clone。
+    let manifest_dir = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
+    let sibling_dir = manifest_dir
+        .parent()
+        .map(|parent| parent.join("tg-rcore-tutorial-user"))
+        .unwrap();
+    if sibling_dir.join("Cargo.toml").exists() {
+        ensure_workspace_table(&sibling_dir);
+        return sibling_dir;
+    }
+
     // 从 .cargo/config.toml [env] 读取三个配置项
     let crate_name = env::var("TG_USER_CRATE")
         .expect("TG_USER_CRATE not set; add it to .cargo/config.toml [env]");
@@ -212,7 +260,6 @@ fn ensure_tg_user() -> PathBuf {
     let version = env::var("TG_USER_VERSION")
         .expect("TG_USER_VERSION not set; add it to .cargo/config.toml [env]");
 
-    let manifest_dir = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
     let tg_user_dir = manifest_dir.join(&local_dir_name);
 
     // 本地缓存目录已存在则直接使用

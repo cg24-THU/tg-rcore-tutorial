@@ -14,10 +14,24 @@ use tg_console::log;
 pub use tg_console::{print, println};
 pub use tg_syscall::*;
 
+#[repr(C, align(16))]
+struct UserTls {
+    errno: i32,
+}
+
+static mut USER_TLS: UserTls = UserTls { errno: 0 };
+
+#[inline]
+fn init_tls() {
+    let tp = core::ptr::addr_of_mut!(USER_TLS) as usize;
+    unsafe { core::arch::asm!("mv tp, {}", in(reg) tp) };
+}
+
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".text.entry")]
 pub extern "C" fn _start() -> ! {
     // 用户态运行时初始化顺序与内核类似：先 I/O，再堆，再进入 main。
+    init_tls();
     tg_console::init_console(&Console);
     tg_console::set_log_level(option_env!("LOG"));
     heap::init();

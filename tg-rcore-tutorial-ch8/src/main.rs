@@ -54,6 +54,10 @@ mod process;
 mod processor;
 /// VirtIO 块设备驱动
 mod virtio_block;
+/// VirtIO GPU framebuffer 驱动
+mod virtio_gpu;
+/// VirtIO 键盘输入驱动
+mod virtio_input;
 
 #[macro_use]
 extern crate tg_console;
@@ -157,7 +161,11 @@ impl KernelSpace {
 static KERNEL_SPACE: KernelSpace = KernelSpace::new();
 
 /// VirtIO MMIO 设备地址范围
-pub const MMIO: &[(usize, usize)] = &[(0x1000_1000, 0x00_1000)];
+pub const MMIO: &[(usize, usize)] = &[
+    (0x1000_1000, 0x00_1000),
+    (0x1000_2000, 0x00_1000),
+    (0x1000_3000, 0x00_1000),
+];
 
 /// 内核主函数
 ///
@@ -196,6 +204,7 @@ extern "C" fn rust_main() -> ! {
     tg_syscall::init_process(&SyscallContext);
     tg_syscall::init_scheduling(&SyscallContext);
     tg_syscall::init_clock(&SyscallContext);
+    tg_syscall::init_memory(&SyscallContext);
     tg_syscall::init_signal(&SyscallContext);
     tg_syscall::init_thread(&SyscallContext);       // 本章新增：线程系统调用
     tg_syscall::init_sync_mutex(&SyscallContext);   // 本章新增：同步原语系统调用
@@ -265,7 +274,11 @@ extern "C" fn rust_main() -> ! {
                     }
                 }
                 e => {
-                    log::error!("unsupported trap: {e:?}");
+                    log::error!(
+                        "unsupported trap: {e:?}, sepc={:#x}, stval={:#x}",
+                        sepc::read(),
+                        stval::read()
+                    );
                     unsafe { (*processor).make_current_exited(-3) };
                 }
             }
@@ -349,11 +362,13 @@ mod impls {
         build_flags,
         fs::{read_all, Fd, FS},
         processor::ProcessorInner,
+        virtio_gpu::GPU_DEVICE,
+        virtio_input::INPUT_DEVICE,
         Sv39, Thread, PROCESSOR,
     };
     use alloc::sync::Arc;
-    use alloc::{alloc::alloc_zeroed, string::String, vec::Vec};
-    use core::{alloc::Layout, ptr::NonNull};
+    use alloc::{alloc::alloc_zeroed, string::String};
+    use core::{alloc::Layout, cmp::min, ptr::NonNull};
     use spin::Mutex;
     use tg_console::log;
     use tg_easy_fs::{make_pipe, FSManager, OpenFlags, UserBuffer};
@@ -365,9 +380,14 @@ mod impls {
     use tg_sync::{Condvar, Mutex as MutexTrait, MutexBlocking, Semaphore};
     use tg_syscall::*;
     use tg_task_manage::{ProcId, ThreadId};
+    use virtio_drivers::InputEvent;
     use xmas_elf::ElfFile;
 
     const DEADLOCK_DETECTED: isize = -0xdead;
+    const EV_KEY: u16 = 0x01;
+    const SEEK_SET: usize = 0;
+    const SEEK_CUR: usize = 1;
+    const SEEK_END: usize = 2;
 
     // ─── Sv39 页表管理器 ───
 
@@ -431,6 +451,113 @@ mod impls {
     const READABLE: VmFlags<Sv39> = build_flags("RV");
     const WRITEABLE: VmFlags<Sv39> = build_flags("W_V");
 
+    fn translate_input_key(code: u16) -> Option<u16> {
+        Some(match code {
+            1 => 27,
+            2 => b'1' as u16,
+            3 => b'2' as u16,
+            4 => b'3' as u16,
+            5 => b'4' as u16,
+            6 => b'5' as u16,
+            7 => b'6' as u16,
+            8 => b'7' as u16,
+            9 => b'8' as u16,
+            10 => b'9' as u16,
+            11 => b'0' as u16,
+            14 => 0x7f,
+            15 => 9,
+            16 => b'q' as u16,
+            17 => b'w' as u16,
+            18 => b'e' as u16,
+            19 => b'r' as u16,
+            20 => b't' as u16,
+            21 => b'y' as u16,
+            22 => b'u' as u16,
+            23 => b'i' as u16,
+            24 => b'o' as u16,
+            25 => b'p' as u16,
+            28 => 13,
+            29 => 0x80 + 0x1d,
+            30 => b'a' as u16,
+            31 => b's' as u16,
+            32 => b'd' as u16,
+            33 => b'f' as u16,
+            34 => b'g' as u16,
+            35 => b'h' as u16,
+            36 => b'j' as u16,
+            37 => b'k' as u16,
+            38 => b'l' as u16,
+            42 | 54 => 0x80 + 0x36,
+            44 => b'z' as u16,
+            45 => b'x' as u16,
+            46 => b'c' as u16,
+            47 => b'v' as u16,
+            48 => b'b' as u16,
+            49 => b'n' as u16,
+            50 => b'm' as u16,
+            56 | 100 => 0x80 + 0x38,
+            57 => 0xa2,
+            59 => 0x80 + 0x3b,
+            60 => 0x80 + 0x3c,
+            61 => 0x80 + 0x3d,
+            62 => 0x80 + 0x3e,
+            63 => 0x80 + 0x3f,
+            64 => 0x80 + 0x40,
+            65 => 0x80 + 0x41,
+            66 => 0x80 + 0x42,
+            67 => 0x80 + 0x43,
+            68 => 0x80 + 0x44,
+            87 => 0x80 + 0x57,
+            88 => 0x80 + 0x58,
+            103 => 0xad,
+            105 => 0xac,
+            106 => 0xae,
+            108 => 0xaf,
+            _ => return None,
+        })
+    }
+
+    fn copy_user_bytes(current: &crate::process::Process, user_ptr: usize, buffer: &mut [u8]) -> bool {
+        let mut copied = 0usize;
+        while copied < buffer.len() {
+            let addr = user_ptr + copied;
+            let chunk = min(
+                (1 << Sv39::PAGE_BITS) - VAddr::<Sv39>::new(addr).offset(),
+                buffer.len() - copied,
+            );
+            let Some(src) = current.address_space.translate::<u8>(VAddr::new(addr), READABLE) else {
+                return false;
+            };
+            buffer[copied..copied + chunk]
+                .copy_from_slice(unsafe { core::slice::from_raw_parts(src.as_ptr(), chunk) });
+            copied += chunk;
+        }
+        true
+    }
+
+    fn user_buffer_segments(
+        current: &crate::process::Process,
+        user_ptr: usize,
+        len: usize,
+        flags: VmFlags<Sv39>,
+    ) -> Option<alloc::vec::Vec<&'static mut [u8]>> {
+        let mut buffers = alloc::vec::Vec::new();
+        let mut offset = 0usize;
+        while offset < len {
+            let addr = user_ptr + offset;
+            let chunk = min(
+                (1 << Sv39::PAGE_BITS) - VAddr::<Sv39>::new(addr).offset(),
+                len - offset,
+            );
+            let ptr = current
+                .address_space
+                .translate::<u8>(VAddr::new(addr), flags)?;
+            unsafe { buffers.push(core::slice::from_raw_parts_mut(ptr.as_ptr(), chunk)); }
+            offset += chunk;
+        }
+        Some(buffers)
+    }
+
     /// IO 系统调用（与第七章基本相同）
     ///
     /// 注意：本章通过 `get_current_proc()` 获取当前线程所属的进程，
@@ -438,43 +565,52 @@ mod impls {
     impl IO for SyscallContext {
         fn write(&self, _caller: Caller, fd: usize, buf: usize, count: usize) -> isize {
             let current = PROCESSOR.get_mut().get_current_proc().unwrap();
-            if let Some(ptr) = current.address_space.translate(VAddr::new(buf), READABLE) {
-                if fd == STDOUT || fd == STDDEBUG {
-                    print!("{}", unsafe {
-                        core::str::from_utf8_unchecked(core::slice::from_raw_parts(
-                            ptr.as_ptr(), count,
-                        ))
-                    });
-                    count as _
-                } else if let Some(file) = &current.fd_table[fd] {
-                    let file = file.lock();
-                    if file.writable() {
-                        let mut v: Vec<&'static mut [u8]> = Vec::new();
-                        unsafe { v.push(core::slice::from_raw_parts_mut(ptr.as_ptr(), count)) };
-                        file.write(UserBuffer::new(v)) as _
-                    } else { log::error!("file not writable"); -1 }
-                } else { log::error!("unsupported fd: {fd}"); -1 }
-            } else { log::error!("ptr not readable"); -1 }
+            if fd == STDOUT || fd == STDDEBUG {
+                let mut data = alloc::vec![0u8; count];
+                if !copy_user_bytes(current, buf, &mut data) {
+                    log::error!("ptr not readable");
+                    return -1;
+                }
+                print!("{}", unsafe { core::str::from_utf8_unchecked(&data) });
+                count as _
+            } else if fd < current.fd_table.len() && let Some(file) = &current.fd_table[fd] {
+                let file = file.lock();
+                if file.writable() {
+                    if let Some(buffers) = user_buffer_segments(current, buf, count, READABLE) {
+                        file.write(UserBuffer::new(buffers)) as _
+                    } else {
+                        log::error!("ptr not readable");
+                        -1
+                    }
+                } else { log::error!("file not writable"); -1 }
+            } else { log::error!("unsupported fd: {fd}"); -1 }
         }
 
         fn read(&self, _caller: Caller, fd: usize, buf: usize, count: usize) -> isize {
             let current = PROCESSOR.get_mut().get_current_proc().unwrap();
-            if let Some(ptr) = current.address_space.translate(VAddr::new(buf), WRITEABLE) {
-                if fd == STDIN {
-                    let mut ptr = ptr.as_ptr();
-                    for _ in 0..count {
-                        unsafe { *ptr = tg_sbi::console_getchar() as u8; ptr = ptr.add(1); }
+            if fd == STDIN {
+                if let Some(buffers) = user_buffer_segments(current, buf, count, WRITEABLE) {
+                    for segment in buffers {
+                        for byte in segment {
+                            *byte = tg_sbi::console_getchar() as u8;
+                        }
                     }
                     count as _
-                } else if let Some(file) = &current.fd_table[fd] {
-                    let file = file.lock();
-                    if file.readable() {
-                        let mut v: Vec<&'static mut [u8]> = Vec::new();
-                        unsafe { v.push(core::slice::from_raw_parts_mut(ptr.as_ptr(), count)) };
-                        file.read(UserBuffer::new(v)) as _
-                    } else { log::error!("file not readable"); -1 }
-                } else { log::error!("unsupported fd: {fd}"); -1 }
-            } else { log::error!("ptr not writeable"); -1 }
+                } else {
+                    log::error!("ptr not writeable");
+                    -1
+                }
+            } else if fd < current.fd_table.len() && let Some(file) = &current.fd_table[fd] {
+                let file = file.lock();
+                if file.readable() {
+                    if let Some(buffers) = user_buffer_segments(current, buf, count, WRITEABLE) {
+                        file.read(UserBuffer::new(buffers)) as _
+                    } else {
+                        log::error!("ptr not writeable");
+                        -1
+                    }
+                } else { log::error!("file not readable"); -1 }
+            } else { log::error!("unsupported fd: {fd}"); -1 }
         }
 
         fn open(&self, _caller: Caller, path: usize, flags: usize) -> isize {
@@ -508,6 +644,34 @@ mod impls {
             0
         }
 
+        fn lseek(&self, _caller: Caller, fd: usize, offset: isize, whence: usize) -> isize {
+            let current = PROCESSOR.get_mut().get_current_proc().unwrap();
+            if fd >= current.fd_table.len() {
+                return -1;
+            }
+            let Some(file) = current.fd_table[fd].as_ref() else {
+                return -1;
+            };
+            let file = file.lock();
+            let Fd::File(file) = &*file else {
+                return -1;
+            };
+            let Some(inode) = file.inode.as_ref() else {
+                return -1;
+            };
+            let new_offset = match whence {
+                SEEK_SET => offset,
+                SEEK_CUR => file.offset.get() as isize + offset,
+                SEEK_END => inode.size() as isize + offset,
+                _ => return -1,
+            };
+            if new_offset < 0 {
+                return -1;
+            }
+            file.offset.set(new_offset as usize);
+            new_offset
+        }
+
         /// pipe 系统调用
         fn pipe(&self, _caller: Caller, pipe: usize) -> isize {
             let current = PROCESSOR.get_mut().get_current_proc().unwrap();
@@ -523,6 +687,131 @@ mod impls {
             current.fd_table.push(Some(Mutex::new(Fd::PipeRead(read_end))));
             current.fd_table.push(Some(Mutex::new(Fd::PipeWrite(write_end))));
             0
+        }
+
+        fn fstat(&self, _caller: Caller, fd: usize, st: usize) -> isize {
+            let current = PROCESSOR.get_mut().get_current_proc().unwrap();
+            if fd >= current.fd_table.len() {
+                return -1;
+            }
+            let Some(file) = current.fd_table[fd].as_ref() else {
+                return -1;
+            };
+            let mut stat = Stat::new();
+            match &*file.lock() {
+                Fd::File(file) => {
+                    let Some(inode) = file.inode.as_ref() else {
+                        return -1;
+                    };
+                    stat.dev = 0;
+                    stat.ino = inode.inode_id() as u64;
+                    stat.mode = if inode.is_dir() {
+                        StatMode::DIR
+                    } else {
+                        StatMode::FILE
+                    };
+                    stat.nlink = inode.nlink();
+                }
+                Fd::PipeRead(_) | Fd::PipeWrite(_) | Fd::Empty { .. } => {
+                    stat.mode = StatMode::NULL;
+                }
+            }
+            if let Some(mut ptr) = current.address_space.translate::<Stat>(VAddr::new(st), WRITEABLE) {
+                *unsafe { ptr.as_mut() } = stat;
+                0
+            } else {
+                -1
+            }
+        }
+
+        fn framebuffer_get_info(&self, _caller: Caller, info: usize) -> isize {
+            let current = PROCESSOR.get_mut().get_current_proc().unwrap();
+            let gpu = GPU_DEVICE.lock();
+            let frame_info = FramebufferInfo {
+                width: gpu.width as u32,
+                height: gpu.height as u32,
+                stride: gpu.stride as u32,
+                format: FRAMEBUFFER_FORMAT_BGRX8888,
+            };
+            drop(gpu);
+            if let Some(mut ptr) = current
+                .address_space
+                .translate::<FramebufferInfo>(VAddr::new(info), WRITEABLE)
+            {
+                *unsafe { ptr.as_mut() } = frame_info;
+                0
+            } else {
+                -1
+            }
+        }
+
+        fn framebuffer_flush(
+            &self,
+            _caller: Caller,
+            buf: usize,
+            len: usize,
+            width: usize,
+            height: usize,
+            stride: usize,
+        ) -> isize {
+            let current = PROCESSOR.get_mut().get_current_proc().unwrap();
+            let Some(required_len) = stride.checked_mul(height) else {
+                return -1;
+            };
+            if width == 0 || height == 0 || stride < width * 4 || len < required_len {
+                return -1;
+            }
+
+            let mut gpu = GPU_DEVICE.lock();
+            let dst_width = min(width, gpu.width);
+            let dst_height = min(height, gpu.height);
+            let dst_x = (gpu.width.saturating_sub(dst_width)) / 2;
+            let dst_y = (gpu.height.saturating_sub(dst_height)) / 2;
+            let dst_stride = gpu.stride;
+            {
+                let framebuffer = gpu.framebuffer();
+                for row in 0..dst_height {
+                    let dst_offset = (dst_y + row) * dst_stride + dst_x * 4;
+                    let dst_row = &mut framebuffer[dst_offset..dst_offset + dst_width * 4];
+                    let src_offset = row * stride;
+                    if !copy_user_bytes(current, buf + src_offset, dst_row) {
+                        return -1;
+                    }
+                }
+            }
+            gpu.flush();
+            dst_height as isize
+        }
+
+        fn input_next_event(&self, _caller: Caller, event: usize) -> isize {
+            let current = PROCESSOR.get_mut().get_current_proc().unwrap();
+            let mut input = INPUT_DEVICE.lock();
+            let Some(InputEvent {
+                event_type,
+                code,
+                value,
+            }) = input.pop_pending_event() else {
+                return 0;
+            };
+            if event_type != EV_KEY {
+                return 0;
+            }
+            let Some(key) = translate_input_key(code) else {
+                return 0;
+            };
+            let translated = InputKeyEvent {
+                key,
+                pressed: if value == 0 { 0 } else { 1 },
+            };
+            if let Some(mut ptr) = current
+                .address_space
+                .translate::<InputKeyEvent>(VAddr::new(event), WRITEABLE)
+            {
+                *unsafe { ptr.as_mut() } = translated;
+                1
+            } else {
+                -1
+            }
         }
     }
 
@@ -584,6 +873,15 @@ mod impls {
         fn getpid(&self, _caller: Caller) -> isize {
             PROCESSOR.get_mut().get_current_proc().unwrap().pid.get_usize() as _
         }
+
+        fn sbrk(&self, _caller: Caller, size: i32) -> isize {
+            let current = PROCESSOR.get_mut().get_current_proc().unwrap();
+            if let Some(old_brk) = current.change_program_brk(size as isize) {
+                old_brk as isize
+            } else {
+                -1
+            }
+        }
     }
 
     impl Scheduling for SyscallContext {
@@ -610,6 +908,27 @@ mod impls {
                 }
                 _ => -1,
             }
+        }
+    }
+
+    impl Memory for SyscallContext {
+        #[inline]
+        fn mmap(
+            &self,
+            _caller: Caller,
+            _addr: usize,
+            _length: usize,
+            _prot: i32,
+            _flags: i32,
+            _fd: i32,
+            _offset: usize,
+        ) -> isize {
+            -1
+        }
+
+        #[inline]
+        fn munmap(&self, _caller: Caller, _addr: usize, _length: usize) -> isize {
+            -1
         }
     }
 

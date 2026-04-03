@@ -1,4 +1,6 @@
-use crate::{ClockId, SignalAction, SignalNo, Stat, SyscallId, TimeSpec};
+use crate::{
+    ClockId, FramebufferInfo, InputKeyEvent, SignalAction, SignalNo, Stat, SyscallId, TimeSpec,
+};
 use bitflags::*;
 use native::*;
 
@@ -17,9 +19,9 @@ pub fn write(fd: usize, buffer: &[u8]) -> isize {
 
 /// 从文件描述符读取数据。
 #[inline]
-pub fn read(fd: usize, buffer: &[u8]) -> isize {
+pub fn read(fd: usize, buffer: &mut [u8]) -> isize {
     // SAFETY: buffer 是有效的切片引用，其指针和长度在调用期间有效
-    unsafe { syscall3(SyscallId::READ, fd, buffer.as_ptr() as _, buffer.len()) }
+    unsafe { syscall3(SyscallId::READ, fd, buffer.as_mut_ptr() as _, buffer.len()) }
 }
 
 bitflags! {
@@ -50,6 +52,12 @@ pub fn open(path: &str, flags: OpenFlags) -> isize {
 pub fn close(fd: usize) -> isize {
     // SAFETY: 系统调用参数是简单的整数值
     unsafe { syscall1(SyscallId::CLOSE, fd) }
+}
+
+/// 调整文件偏移。
+#[inline]
+pub fn lseek(fd: usize, offset: isize, whence: usize) -> isize {
+    unsafe { syscall3(SyscallId::LSEEK, fd, offset as usize, whence) }
 }
 
 /// 创建一个文件的一个硬链接。
@@ -84,6 +92,39 @@ pub fn unlink(path: &str) -> isize {
 pub fn fstat(fd: usize, st: &mut Stat) -> isize {
     // SAFETY: 调用者需要确保 st 指向有效的可写内存
     unsafe { syscall2(SyscallId::FSTAT, fd, st as *const _ as usize) }
+}
+
+/// Query framebuffer metadata from the kernel.
+#[inline]
+pub fn framebuffer_get_info(info: &mut FramebufferInfo) -> isize {
+    unsafe { syscall1(SyscallId::FRAMEBUFFER_GET_INFO, info as *mut _ as usize) }
+}
+
+/// Copy a rendered frame into the kernel-managed framebuffer and present it.
+#[inline]
+pub fn framebuffer_flush(
+    buffer: *const u8,
+    len: usize,
+    width: usize,
+    height: usize,
+    stride: usize,
+) -> isize {
+    unsafe {
+        syscall5(
+            SyscallId::FRAMEBUFFER_FLUSH,
+            buffer as usize,
+            len,
+            width,
+            height,
+            stride,
+        )
+    }
+}
+
+/// Poll the next translated input event from the kernel.
+#[inline]
+pub fn input_next_event(event: &mut InputKeyEvent) -> isize {
+    unsafe { syscall1(SyscallId::INPUT_NEXT_EVENT, event as *mut _ as usize) }
 }
 
 /// 退出当前进程。

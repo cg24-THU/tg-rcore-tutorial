@@ -113,6 +113,11 @@ impl Inode {
         self.read_disk_inode(|disk_inode| disk_inode.nlink)
     }
 
+    /// Return the byte size of the current inode.
+    pub fn size(&self) -> u32 {
+        self.read_disk_inode(|disk_inode| disk_inode.size)
+    }
+
     /// Increase the size of a disk inode
     fn increase_size(
         &self,

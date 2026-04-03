@@ -167,6 +167,7 @@ cases = [
     "pipetest",
     "pipe_large_test",
     "ch8b_usertest",
+    "doom",
     "user_shell",
     "initproc",
 ]

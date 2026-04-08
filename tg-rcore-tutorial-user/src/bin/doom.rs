@@ -21,6 +21,7 @@ unsafe extern "C" {
 const DOOM_WIDTH: usize = 640;
 const DOOM_HEIGHT: usize = 400;
 const DOOM_STRIDE: usize = DOOM_WIDTH * 4;
+const KEY_FIRE: u8 = 0xa3;
 
 const O_ACCMODE: c_int = 0o3;
 const O_RDONLY: c_int = 0;
@@ -101,9 +102,15 @@ pub extern "C" fn DG_GetKey(pressed: *mut c_int, doom_key: *mut u8) -> c_int {
     if input_next_event(&mut event) <= 0 {
         return 0;
     }
+    let translated = match event.key as u8 {
+        // Some VNC clients intercept Ctrl before it reaches QEMU.
+        // Keep Ctrl as the canonical fire key, but allow plain 'f' too.
+        b'f' | b'F' => KEY_FIRE,
+        key => key,
+    };
     unsafe {
         *pressed = event.pressed as c_int;
-        *doom_key = event.key as u8;
+        *doom_key = translated;
     }
     1
 }

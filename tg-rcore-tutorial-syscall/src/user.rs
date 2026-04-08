@@ -127,6 +127,12 @@ pub fn input_next_event(event: &mut InputKeyEvent) -> isize {
     unsafe { syscall1(SyscallId::INPUT_NEXT_EVENT, event as *mut _ as usize) }
 }
 
+/// Ask the kernel to render one tangram piece and immediately flush it.
+#[inline]
+pub fn draw_piece(piece_id: usize) -> isize {
+    unsafe { syscall1(SyscallId::DRAW_PIECE, piece_id) }
+}
+
 /// 退出当前进程。
 ///
 /// see <https://man7.org/linux/man-pages/man2/exit.2.html>.

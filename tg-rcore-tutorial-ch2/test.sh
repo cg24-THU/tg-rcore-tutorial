@@ -1,45 +1,42 @@
 #!/bin/bash
-# ch2 测试脚本
+set -euo pipefail
 
-set -e
+LOG_FILE=/tmp/ch2-moving-tangram.log
+rm -f "$LOG_FILE"
 
-GREEN='\033[0;32m'
-RED='\033[0;31m'
-YELLOW='\033[0;33m'
-NC='\033[0m'
+cargo build >/dev/null
 
-# 检查并安装 tg-rcore-tutorial-checker
-ensure_tg_checker() {
-    if ! command -v tg-rcore-tutorial-checker &> /dev/null; then
-        echo -e "${YELLOW}tg-rcore-tutorial-checker 未安装，正在安装...${NC}"
-        if cargo install tg-rcore-tutorial-checker; then
-            echo -e "${GREEN}✓ tg-rcore-tutorial-checker 安装成功${NC}"
-        else
-            echo -e "${RED}✗ tg-rcore-tutorial-checker 安装失败${NC}"
-            exit 1
-        fi
+timeout 15s qemu-system-riscv64 \
+    -machine virt \
+    -bios none \
+    -display none \
+    -device virtio-gpu-device \
+    -serial "file:$LOG_FILE" \
+    -monitor none \
+    -kernel target/riscv64gc-unknown-none-elf/debug/tg-rcore-tutorial-ch2 \
+    >/dev/null 2>&1
+
+required_patterns=(
+    "VirtIO-GPU framebuffer ready:"
+    "request draw piece: 0"
+    "request draw piece: 6"
+    "app0 exit with code 0"
+    "app6 exit with code 6"
+)
+
+for pattern in "${required_patterns[@]}"; do
+    if ! grep -q "$pattern" "$LOG_FILE"; then
+        echo "Test FAILED: missing <$pattern>"
+        echo "Actual output:"
+        cat "$LOG_FILE"
+        exit 1
     fi
-}
+done
 
-ensure_tg_checker
-
-echo "运行 ch2 基础测试..."
-echo -e "${YELLOW}────────── cargo run 输出 ──────────${NC}"
-
-# 使用 tee 将 cargo run 的输出同时显示在终端和传递给 tg-rcore-tutorial-checker
-# - cargo run 2>&1：合并 stdout 和 stderr（包含编译信息和运行输出）
-# - tee /dev/stderr：将输出复制一份到 stderr（显示在终端），原始流继续通过管道
-# - tg-rcore-tutorial-checker --ch 2：接收管道中的输出进行检查
-# 使用 pipefail 确保管道中任意命令失败都能被捕获
-set -o pipefail
-if cargo run 2>&1 | tee /dev/stderr | tg-rcore-tutorial-checker --ch 2; then
-    echo ""
-    echo -e "${YELLOW}────────── 测试结果 ──────────${NC}"
-    echo -e "${GREEN}✓ ch2 基础测试通过${NC}"
-    exit 0
-else
-    echo ""
-    echo -e "${YELLOW}────────── 测试结果 ──────────${NC}"
-    echo -e "${RED}✗ ch2 基础测试失败${NC}"
+if grep -q "was killed because of" "$LOG_FILE"; then
+    echo "Test FAILED: unexpected trap in user apps"
+    cat "$LOG_FILE"
     exit 1
 fi
+
+echo "Test PASSED: moving tangram batch rendering completed"

@@ -320,6 +320,7 @@
 #define __NR_framebuffer_get_info 1040
 #define __NR_framebuffer_flush 1041
 #define __NR_input_next_event 1042
+#define __NR_draw_piece 1043
 
 #define __NR_spawn 400
 #define __NR_trace 410

@@ -30,6 +30,10 @@
 #[macro_use]
 extern crate tg_console;
 
+/// Framebuffer drawing and VirtIO-GPU support.
+#[allow(missing_docs)]
+mod graphics;
+
 // 本地模块：Console 和 SyscallContext 的实现
 use impls::{Console, SyscallContext};
 // riscv 库：访问 RISC-V 控制状态寄存器（CSR），如 scause
@@ -42,6 +46,11 @@ use tg_kernel_context::LocalContext;
 use tg_sbi;
 // 系统调用相关：调用者信息、系统调用 ID
 use tg_syscall::{Caller, SyscallId};
+
+/// 裸机内核分配器，供 VirtIO-GPU 驱动分配 DMA/堆内存。
+#[cfg(target_arch = "riscv64")]
+#[global_allocator]
+static GLOBAL_ALLOCATOR: graphics::KernelAllocator = graphics::KernelAllocator;
 
 // ========== 启动相关 ==========
 
@@ -87,11 +96,15 @@ extern "C" fn rust_main() -> ! {
     // 第三步：初始化系统调用处理（注册 IO 和 Process 的实现）
     tg_syscall::init_io(&SyscallContext);
     tg_syscall::init_process(&SyscallContext);
+    graphics::init().unwrap_or_else(|reason| panic!("graphics init failed: {reason}"));
 
     // 第四步：批处理——依次加载并运行每个用户程序
     for (i, app) in tg_linker::AppMeta::locate().iter().enumerate() {
         let app_base = app.as_ptr() as usize;
         log::info!("load app{i} to {app_base:#x}");
+        // AppIterator 会先把用户程序拷贝到固定基址，再进入循环体；
+        // 这里需要立刻 fence.i，保证之后取到的是新程序的指令而不是旧 i-cache。
+        unsafe { core::arch::asm!("fence.i") };
 
         // 创建用户态上下文，入口地址为 app_base
         // LocalContext::user() 会设置 sstatus.SPP = User，
@@ -128,7 +141,11 @@ extern "C" fn rust_main() -> ! {
                     }
                 }
                 // 其他异常（如非法指令、页错误等）：杀死应用
-                trap => log::error!("app{i} was killed because of {trap:?}"),
+                trap => log::error!(
+                    "app{i} was killed because of {trap:?}, sepc={:#x}, stval={:#x}",
+                    sepc::read(),
+                    stval::read()
+                ),
             }
             // 清除指令缓存：因为下一个用户程序会被加载到相同的内存区域，
             // 需要确保 i-cache 中不会残留旧的指令
@@ -140,6 +157,7 @@ extern "C" fn rust_main() -> ! {
         println!();
     }
 
+    graphics::hold_final_frame();
     // 所有用户程序执行完毕，关机
     tg_sbi::shutdown(false)
 }
@@ -236,6 +254,10 @@ mod impls {
                     -1
                 }
             }
+        }
+
+        fn draw_piece(&self, _caller: tg_syscall::Caller, piece_id: usize) -> isize {
+            crate::graphics::draw_piece(piece_id)
         }
     }
 

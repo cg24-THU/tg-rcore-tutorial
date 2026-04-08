@@ -91,6 +91,9 @@ pub trait IO: Sync {
     fn input_next_event(&self, caller: Caller, event: usize) -> isize {
         unimplemented!()
     }
+    fn draw_piece(&self, caller: Caller, piece_id: usize) -> isize {
+        unimplemented!()
+    }
 }
 
 pub trait Memory: Sync {
@@ -287,6 +290,7 @@ pub fn handle(caller: Caller, id: SyscallId, args: [usize; 6]) -> SyscallResult 
             io.framebuffer_flush(caller, args[0], args[1], args[2], args[3], args[4])
         }),
         Id::INPUT_NEXT_EVENT => IO.call(id, |io| io.input_next_event(caller, args[0])),
+        Id::DRAW_PIECE => IO.call(id, |io| io.draw_piece(caller, args[0])),
         Id::EXIT => PROCESS.call(id, |proc| proc.exit(caller, args[0])),
         Id::CLONE => PROCESS.call(id, |proc| proc.fork(caller)),
         Id::EXECVE => PROCESS.call(id, |proc| proc.exec(caller, args[0], args[1])),

@@ -29,3 +29,5 @@ customizable-buddy = "0.0.2"
 
 [build-dependencies]
 cc = "1"
+
+[workspace]

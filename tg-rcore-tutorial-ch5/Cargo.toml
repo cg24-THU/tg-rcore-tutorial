@@ -1,19 +1,28 @@
 [package]
-name = "tg-rcore-tutorial-ch5"
-description = "Chapter 5 of rCore Tutorial: Process management with fork, exec and wait syscalls."
-version = "0.4.8"
+name = "cg-tg-rcore-tutorial-ch5"
+description = "A reproducible learning crate for rCore Tutorial chapter 5, covering process management, spawn, stride scheduling, and mmap/munmap on RISC-V."
+version = "0.0.0"
 edition = "2024"
-authors = ["YdrMaster <ydrml@hotmail.com>","Yifan Wang<w-yf22@mails.tsinghua.edu.cn>","Yu Chen <yuchen@tsinghua.edu.cn>"]
-repository = "https://github.com/rcore-os/tg-rcore-tutorial-ch5"
-homepage = "https://github.com/rcore-os/tg-rcore-tutorial-ch5/tree/test"
-documentation = "https://docs.rs/tg-rcore-tutorial-ch5"
+rust-version = "1.85"
+authors = ["Chaoge <2024010843@secoder.net>"]
+repository = "https://github.com/cg24-THU/tg-rcore-tutorial"
+homepage = "https://github.com/cg24-THU/tg-rcore-tutorial/tree/test/tg-rcore-tutorial-ch5"
+documentation = "https://docs.rs/cg-tg-rcore-tutorial-ch5"
 license = "GPL-3.0"
 readme = "README.md"
-keywords = ["rcore", "tutorial", "no-std", "riscv", "process"]
+keywords = ["ai", "ai4ose", "kernel", "learning", "os"]
 categories = ["no-std", "embedded"]
-exclude = [
-    "tg-user/**",
-#    ".cargo/config.toml",
+include = [
+    ".cargo/config.toml",
+    "Cargo.toml",
+    "LICENSE",
+    "README.md",
+    "build.rs",
+    "exercise.md",
+    "report.md",
+    "rust-toolchain.toml",
+    "test.sh",
+    "src/**",
 ]
 
 [features]
@@ -30,16 +39,16 @@ xmas-elf = "0.8.0"
 riscv = "0.10.1"
 spin = "0.9"
 
-tg-sbi = { package = "tg-rcore-tutorial-sbi", path = "../tg-rcore-tutorial-sbi", version = "0.4.8", features = ["nobios"] }
-tg-linker = { package = "tg-rcore-tutorial-linker", path = "../tg-rcore-tutorial-linker", version = "0.4.8" }
-tg-console = { package = "tg-rcore-tutorial-console", path = "../tg-rcore-tutorial-console", version = "0.4.8" }
-tg-kernel-context = { package = "tg-rcore-tutorial-kernel-context", path = "../tg-rcore-tutorial-kernel-context", version = "0.4.8", features = ["foreign"] }
-tg-kernel-alloc = { package = "tg-rcore-tutorial-kernel-alloc", path = "../tg-rcore-tutorial-kernel-alloc", version = "0.4.8" }
-tg-kernel-vm = { package = "tg-rcore-tutorial-kernel-vm", path = "../tg-rcore-tutorial-kernel-vm", version = "0.4.8" }
-tg-syscall = { package = "tg-rcore-tutorial-syscall", path = "../tg-rcore-tutorial-syscall", version = "0.4.8", features = ["kernel"] }
-tg-task-manage = { package = "tg-rcore-tutorial-task-manage", path = "../tg-rcore-tutorial-task-manage", version = "0.4.8", features = ["proc"] }
+tg-sbi = { package = "tg-rcore-tutorial-sbi", path = "../tg-rcore-tutorial-sbi", version = "=0.4.8", features = ["nobios"] }
+tg-linker = { package = "tg-rcore-tutorial-linker", path = "../tg-rcore-tutorial-linker", version = "=0.4.8" }
+tg-console = { package = "tg-rcore-tutorial-console", path = "../tg-rcore-tutorial-console", version = "=0.4.8" }
+tg-kernel-context = { package = "tg-rcore-tutorial-kernel-context", path = "../tg-rcore-tutorial-kernel-context", version = "=0.4.8", features = ["foreign"] }
+tg-kernel-alloc = { package = "tg-rcore-tutorial-kernel-alloc", path = "../tg-rcore-tutorial-kernel-alloc", version = "=0.4.8" }
+tg-kernel-vm = { package = "tg-rcore-tutorial-kernel-vm", path = "../tg-rcore-tutorial-kernel-vm", version = "=0.4.8" }
+tg-syscall = { package = "tg-rcore-tutorial-syscall", path = "../tg-rcore-tutorial-syscall", version = "=0.4.8", features = ["kernel"] }
+tg-task-manage = { package = "tg-rcore-tutorial-task-manage", path = "../tg-rcore-tutorial-task-manage", version = "=0.4.8", features = ["proc"] }
 
 [build-dependencies]
-tg-linker = { package = "tg-rcore-tutorial-linker", path = "../tg-rcore-tutorial-linker", version = "0.4.8" }
+tg-linker = { package = "tg-rcore-tutorial-linker", path = "../tg-rcore-tutorial-linker", version = "=0.4.8" }
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"

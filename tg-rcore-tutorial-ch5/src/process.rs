@@ -20,18 +20,19 @@
 //! - 再看 `fork`：重点理解地址空间深拷贝与上下文复制；
 //! - 最后看 `exec`：对比“保留 PID、替换执行映像”的设计含义。
 
-use crate::{build_flags, map_portal, parse_flags, Sv39, Sv39Manager};
+use crate::{Sv39, Sv39Manager, build_flags, map_portal, parse_flags};
 use alloc::alloc::alloc_zeroed;
 use core::alloc::Layout;
-use tg_kernel_context::{foreign::ForeignContext, LocalContext};
+use tg_kernel_context::{LocalContext, foreign::ForeignContext};
 use tg_kernel_vm::{
-    page_table::{MmuMeta, VAddr, VmFlags, PPN, VPN},
     AddressSpace,
+    page_table::{MmuMeta, PPN, VAddr, VPN, VmFlags},
 };
 use tg_task_manage::ProcId;
 use xmas_elf::{
+    ElfFile,
     header::{self, HeaderPt2, Machine},
-    program, ElfFile,
+    program,
 };
 
 /// 进程结构体
@@ -131,8 +132,8 @@ impl Process {
                 continue;
             }
 
-            let off_file = program.offset() as usize;     // 段在文件中的偏移
-            let len_file = program.file_size() as usize;  // 文件中的数据长度
+            let off_file = program.offset() as usize; // 段在文件中的偏移
+            let len_file = program.file_size() as usize; // 文件中的数据长度
             let off_mem = program.virtual_addr() as usize; // 虚拟地址起始
             let end_mem = off_mem + program.mem_size() as usize; // 虚拟地址结束
             assert_eq!(off_file & PAGE_MASK, off_mem & PAGE_MASK);
@@ -299,8 +300,7 @@ impl Process {
         if prot & 0x1 != 0 {
             flags[3] = b'R';
         }
-        let flags: VmFlags<Sv39> =
-            parse_flags(core::str::from_utf8(&flags).unwrap()).unwrap();
+        let flags: VmFlags<Sv39> = parse_flags(core::str::from_utf8(&flags).unwrap()).unwrap();
         self.address_space.map(start_vpn..end_vpn, &[], 0, flags);
         true
     }

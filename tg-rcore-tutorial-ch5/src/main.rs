@@ -52,7 +52,7 @@ extern crate alloc;
 use crate::{
     impls::{Console, Sv39Manager, SyscallContext},
     process::Process,
-    processor::{ProcManager, PROCESSOR},
+    processor::{PROCESSOR, ProcManager},
 };
 use alloc::{alloc::alloc, collections::BTreeMap};
 use core::{alloc::Layout, cell::UnsafeCell, ffi::CStr, mem::MaybeUninit};
@@ -65,8 +65,8 @@ use tg_kernel_context::foreign::MultislotPortal;
 #[cfg(target_arch = "riscv64")]
 use tg_kernel_vm::page_table::Sv39;
 use tg_kernel_vm::{
-    page_table::{MmuMeta, VAddr, VmFlags, VmMeta, PPN, VPN},
     AddressSpace,
+    page_table::{MmuMeta, PPN, VAddr, VPN, VmFlags, VmMeta},
 };
 use tg_sbi;
 use tg_syscall::Caller;
@@ -315,8 +315,8 @@ fn kernel_space(layout: tg_linker::KernelLayout, memory: usize, portal: usize) {
         log::info!("{region}");
         use tg_linker::KernelRegionTitle::*;
         let flags = match region.title {
-            Text => "X_RV",       // 代码段：可执行、可读
-            Rodata => "__RV",     // 只读数据：可读
+            Text => "X_RV",        // 代码段：可执行、可读
+            Rodata => "__RV",      // 只读数据：可读
             Data | Boot => "_WRV", // 数据段：可写、可读
         };
         let s = VAddr::<Sv39>::new(region.range.start);
@@ -365,14 +365,14 @@ fn map_portal(space: &AddressSpace<Sv39, Sv39Manager>) {
 /// 包括 IO、Process、Scheduling、Clock、Memory 等系统调用接口。
 mod impls {
     use crate::{
-        build_flags, process::Process as ProcStruct, processor::ProcManager, Sv39, APPS, PROCESSOR,
+        APPS, PROCESSOR, Sv39, build_flags, process::Process as ProcStruct, processor::ProcManager,
     };
     use alloc::alloc::alloc_zeroed;
     use core::{alloc::Layout, ptr::NonNull};
     use tg_console::log;
     use tg_kernel_vm::{
-        page_table::{MmuMeta, Pte, VAddr, VmFlags, PPN, VPN},
         PageManager,
+        page_table::{MmuMeta, PPN, Pte, VAddr, VPN, VmFlags},
     };
     use tg_syscall::*;
     use tg_task_manage::{PManager, ProcId};

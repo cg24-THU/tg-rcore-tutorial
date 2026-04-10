@@ -1,19 +1,34 @@
 [package]
-name = "tg-rcore-tutorial-ch6"
-description = "Chapter 6 of rCore Tutorial: File system with easy-fs and virtio block device."
-version = "0.4.8"
+name = "cg-tg-rcore-tutorial-ch6"
+version = "0.0.0"
 edition = "2024"
-authors = ["YdrMaster <ydrml@hotmail.com>","Yifan Wang<w-yf22@mails.tsinghua.edu.cn>","Yu Chen <yuchen@tsinghua.edu.cn>"]
-repository = "https://github.com/rcore-os/tg-rcore-tutorial-ch6"
-homepage = "https://github.com/rcore-os/tg-rcore-tutorial-ch6/tree/test"
-documentation = "https://docs.rs/tg-rcore-tutorial-ch6"
+rust-version = "1.94"
+authors = [
+    "Chaoge",
+    "YdrMaster <ydrml@hotmail.com>",
+    "Yifan Wang <w-yf22@mails.tsinghua.edu.cn>",
+    "Yu Chen <yuchen@tsinghua.edu.cn>",
+]
+description = "A learning-oriented rCore Tutorial chapter 6 kernel crate covering easy-fs, VirtIO block IO, file descriptors, and filesystem syscalls."
 license = "GPL-3.0"
+repository = "https://github.com/cg24-THU/tg-rcore-tutorial"
+homepage = "https://github.com/cg24-THU/tg-rcore-tutorial/tree/test/tg-rcore-tutorial-ch6"
+documentation = "https://docs.rs/cg-tg-rcore-tutorial-ch6"
 readme = "README.md"
-keywords = ["rcore", "tutorial", "no-std", "riscv", "filesystem"]
-categories = ["no-std", "embedded"]
-exclude = [
-    "tg-user/**",
-#    ".cargo/config.toml",
+keywords = ["ai", "ai4ose", "kernel", "learning", "os"]
+categories = ["embedded", "no-std"]
+include = [
+    ".cargo/config.toml",
+    "src/**",
+    "build.rs",
+    "Cargo.toml",
+    "LICENSE",
+    "Makefile",
+    "README.md",
+    "exercise.md",
+    "report.md",
+    "rust-toolchain.toml",
+    "test.sh",
 ]
 
 [features]
@@ -26,23 +41,33 @@ panic = "abort"
 panic = "abort"
 
 [dependencies]
-virtio-drivers = "0.1.0"
-xmas-elf = "0.8.0"
 riscv = "0.10.1"
 spin = "0.9"
+virtio-drivers = "0.1.0"
+xmas-elf = "0.8.0"
 
-tg-sbi = { package = "tg-rcore-tutorial-sbi", path = "../tg-rcore-tutorial-sbi", version = "0.4.8", features = ["nobios"] }
-tg-linker = { package = "tg-rcore-tutorial-linker", path = "../tg-rcore-tutorial-linker", version = "0.4.8" }
-tg-console = { package = "tg-rcore-tutorial-console", path = "../tg-rcore-tutorial-console", version = "0.4.8" }
-tg-kernel-context = { package = "tg-rcore-tutorial-kernel-context", path = "../tg-rcore-tutorial-kernel-context", version = "0.4.8", features = ["foreign"] }
-tg-kernel-alloc = { package = "tg-rcore-tutorial-kernel-alloc", path = "../tg-rcore-tutorial-kernel-alloc", version = "0.4.8" }
-tg-kernel-vm = { package = "tg-rcore-tutorial-kernel-vm", path = "../tg-rcore-tutorial-kernel-vm", version = "0.4.8" }
-tg-syscall = { package = "tg-rcore-tutorial-syscall", path = "../tg-rcore-tutorial-syscall", version = "0.4.8", features = ["kernel"] }
-tg-task-manage = { package = "tg-rcore-tutorial-task-manage", path = "../tg-rcore-tutorial-task-manage", version = "0.4.8", features = ["proc"] }
-tg-easy-fs = { package = "tg-rcore-tutorial-easy-fs", path = "../tg-rcore-tutorial-easy-fs", version = "0.4.8" }
+tg-console = { package = "tg-rcore-tutorial-console", version = "0.4.8" }
+tg-easy-fs = { package = "tg-rcore-tutorial-easy-fs", version = "0.4.8" }
+tg-kernel-alloc = { package = "tg-rcore-tutorial-kernel-alloc", version = "0.4.8" }
+tg-kernel-context = { package = "tg-rcore-tutorial-kernel-context", version = "0.4.8", features = ["foreign"] }
+tg-kernel-vm = { package = "tg-rcore-tutorial-kernel-vm", version = "0.4.8" }
+tg-linker = { package = "tg-rcore-tutorial-linker", version = "0.4.8" }
+tg-sbi = { package = "tg-rcore-tutorial-sbi", version = "0.4.8", features = ["nobios"] }
+tg-syscall = { package = "tg-rcore-tutorial-syscall", version = "0.4.8", features = ["kernel"] }
+tg-task-manage = { package = "tg-rcore-tutorial-task-manage", version = "0.4.8", features = ["proc"] }
 
 [build-dependencies]
-tg-linker = { package = "tg-rcore-tutorial-linker", path = "../tg-rcore-tutorial-linker", version = "0.4.8" }
-tg-easy-fs = { package = "tg-rcore-tutorial-easy-fs", path = "../tg-rcore-tutorial-easy-fs", version = "0.4.8" }
 serde = { version = "1", features = ["derive"] }
+tg-easy-fs = { package = "tg-rcore-tutorial-easy-fs", version = "0.4.8" }
+tg-linker = { package = "tg-rcore-tutorial-linker", version = "0.4.8" }
 toml = "0.8"
+
+[package.metadata.docs.rs]
+default-target = "riscv64gc-unknown-none-elf"
+targets = ["riscv64gc-unknown-none-elf"]
+
+[[bin]]
+name = "cg-tg-rcore-tutorial-ch6"
+path = "src/main.rs"
+test = false
+bench = false

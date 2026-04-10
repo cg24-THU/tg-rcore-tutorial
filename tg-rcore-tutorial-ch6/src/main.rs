@@ -52,7 +52,7 @@ extern crate tg_console;
 extern crate alloc;
 
 use crate::{
-    fs::{read_all, FS},
+    fs::{FS, read_all},
     impls::{Console, Sv39Manager, SyscallContext},
     process::Process,
     processor::ProcManager,
@@ -64,13 +64,13 @@ use riscv::register::*;
 #[cfg(not(target_arch = "riscv64"))]
 use stub::Sv39;
 use tg_console::log;
-use tg_easy_fs::{FSManager, OpenFlags};
+use tg_easy_fs::OpenFlags;
 use tg_kernel_context::foreign::MultislotPortal;
 #[cfg(target_arch = "riscv64")]
 use tg_kernel_vm::page_table::Sv39;
 use tg_kernel_vm::{
-    page_table::{MmuMeta, VAddr, VmFlags, VmMeta, PPN, VPN},
     AddressSpace,
+    page_table::{MmuMeta, PPN, VAddr, VPN, VmFlags, VmMeta},
 };
 use tg_sbi;
 use tg_syscall::Caller;
@@ -197,7 +197,7 @@ extern "C" fn rust_main() -> ! {
     tg_syscall::init_memory(&SyscallContext);
     // 步骤 8：从文件系统加载初始进程 initproc
     // 与第五章不同：程序从磁盘镜像（fs.img）中读取，而非内核内嵌
-    let initproc = read_all(FS.open("initproc", OpenFlags::RDONLY).unwrap());
+    let initproc = read_all(FS.open_file("initproc", OpenFlags::RDONLY).unwrap());
     if let Some(process) = Process::from_elf(ElfFile::new(initproc.as_slice()).unwrap()) {
         PROCESSOR.get_mut().set_manager(ProcManager::new());
         PROCESSOR
@@ -276,8 +276,8 @@ fn kernel_space(layout: tg_linker::KernelLayout, memory: usize, portal: usize) {
         log::info!("{region}");
         use tg_linker::KernelRegionTitle::*;
         let flags = match region.title {
-            Text => "X_RV",       // 代码段：可执行、可读
-            Rodata => "__RV",     // 只读数据：可读
+            Text => "X_RV",        // 代码段：可执行、可读
+            Rodata => "__RV",      // 只读数据：可读
             Data | Boot => "_WRV", // 数据段：可写、可读
         };
         let s = VAddr::<Sv39>::new(region.range.start);
@@ -340,11 +340,10 @@ fn map_portal(space: &AddressSpace<Sv39, Sv39Manager>) {
 /// - `linkat`/`unlinkat`/`fstat`：硬链接相关（TODO 练习题）
 mod impls {
     use crate::{
-        build_flags,
-        fs::{read_all, FS},
+        PROCESSOR, Sv39, build_flags,
+        fs::{FS, read_all},
         process::Process as ProcStruct,
         processor::ProcManager,
-        Sv39, PROCESSOR,
     };
     use alloc::vec::Vec;
     use alloc::{alloc::alloc_zeroed, string::String};
@@ -354,8 +353,8 @@ mod impls {
     use tg_easy_fs::UserBuffer;
     use tg_easy_fs::{FSManager, OpenFlags};
     use tg_kernel_vm::{
-        page_table::{MmuMeta, Pte, VAddr, VmFlags, PPN, VPN},
         PageManager,
+        page_table::{MmuMeta, PPN, Pte, VAddr, VPN, VmFlags},
     };
     use tg_syscall::*;
     use tg_task_manage::{PManager, ProcId};
@@ -612,7 +611,7 @@ mod impls {
             if let Some(string) = read_c_string(current, path) {
                 // 通过文件系统打开文件，分配新的文件描述符
                 if let Some(fd) =
-                    FS.open(string.as_str(), OpenFlags::from_bits(flags as u32).unwrap())
+                    FS.open_file(string.as_str(), OpenFlags::from_bits(flags as u32).unwrap())
                 {
                     let new_fd = current.fd_table.len();
                     current.fd_table.push(Some(Mutex::new(fd.as_ref().clone())));
@@ -650,7 +649,10 @@ mod impls {
             _flags: u32,
         ) -> isize {
             let current = PROCESSOR.get_mut().current().unwrap();
-            match (read_c_string(current, oldpath), read_c_string(current, newpath)) {
+            match (
+                read_c_string(current, oldpath),
+                read_c_string(current, newpath),
+            ) {
                 (Some(oldpath), Some(newpath)) => FS.link(oldpath.as_str(), newpath.as_str()),
                 _ => {
                     log::error!("path not readable");
@@ -684,18 +686,15 @@ mod impls {
                 return -1;
             };
             let file = file.lock();
-            let Some(inode) = file.inode.as_ref() else {
+            let Some(meta) = file.meta.as_ref() else {
                 return -1;
             };
+            let meta = meta.lock();
             let mut stat = Stat::new();
             stat.dev = 0;
-            stat.ino = inode.inode_id() as u64;
-            stat.mode = if inode.is_dir() {
-                StatMode::DIR
-            } else {
-                StatMode::FILE
-            };
-            stat.nlink = inode.nlink();
+            stat.ino = meta.ino;
+            stat.mode = meta.mode;
+            stat.nlink = meta.nlink;
             if let Some(mut ptr) = current
                 .address_space
                 .translate::<Stat>(VAddr::new(st), WRITEABLE)
@@ -739,7 +738,7 @@ mod impls {
             let current = PROCESSOR.get_mut().current().unwrap();
             read_user_string(current, path, count)
                 .as_deref()
-                .and_then(|name| FS.open(name, OpenFlags::RDONLY))
+                .and_then(|name| FS.open_file(name, OpenFlags::RDONLY))
                 .map_or_else(
                     || {
                         log::error!("unknown app, select one in the list: ");
@@ -796,7 +795,7 @@ mod impls {
                 log::error!("path not readable");
                 return -1;
             };
-            let Some(fd) = FS.open(app_name.as_str(), OpenFlags::RDONLY) else {
+            let Some(fd) = FS.open_file(app_name.as_str(), OpenFlags::RDONLY) else {
                 log::error!("unknown app: {app_name}");
                 return -1;
             };

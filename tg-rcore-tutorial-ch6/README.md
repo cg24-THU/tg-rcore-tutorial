@@ -178,9 +178,10 @@ make run-exercise
 
 - Crate name: `cg-tg-rcore-tutorial-ch6`
 - Version: `0.0.0`
-- Git tag: `v0.0.0`
+- Git tag: `cg-tg-rcore-tutorial-ch6-v0.0.0`
 
-本 README 与 `report.md` 都以 `v0.0.0` 为课程提交和 crate 发布的对应版本。
+仓库中原有 `v0.0.0` 标签已被其他实验发布占用，因此这里采用最小改动策略，使用
+`cg-tg-rcore-tutorial-ch6-v0.0.0` 作为本实验与 crate `0.0.0` 的对应发布标签。
 
 ## 9. 实验现象与输出示例
 

@@ -24,7 +24,10 @@ pub const CRATE_NAME: &str = env!("CARGO_PKG_NAME");
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// 课程作业对应的仓库 tag。
-pub const RELEASE_TAG: &str = "v0.0.0";
+///
+/// 仓库中的 `v0.0.0` 已被其他实验占用，因此此实验使用专属 tag
+/// `cg-tg-rcore-tutorial-ch6-v0.0.0` 与 crate `0.0.0` 建立一一对应关系。
+pub const RELEASE_TAG: &str = "cg-tg-rcore-tutorial-ch6-v0.0.0";
 
 /// 该 crate 在 crates.io 上声明的关键字。
 pub const KEYWORDS: &[&str] = &["ai", "ai4ose", "kernel", "learning", "os"];
@@ -37,7 +40,7 @@ mod tests {
     fn release_metadata_is_consistent() {
         assert_eq!(CRATE_NAME, "cg-tg-rcore-tutorial-ch6");
         assert_eq!(VERSION, "0.0.0");
-        assert_eq!(RELEASE_TAG, "v0.0.0");
+        assert_eq!(RELEASE_TAG, "cg-tg-rcore-tutorial-ch6-v0.0.0");
         assert_eq!(KEYWORDS.len(), 5);
     }
 }

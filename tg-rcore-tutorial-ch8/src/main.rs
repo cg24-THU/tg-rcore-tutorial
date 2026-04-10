@@ -55,8 +55,10 @@ mod processor;
 /// VirtIO 块设备驱动
 mod virtio_block;
 /// VirtIO GPU framebuffer 驱动
+#[allow(dead_code)]
 mod virtio_gpu;
 /// VirtIO 键盘输入驱动
+#[allow(dead_code)]
 mod virtio_input;
 
 #[macro_use]
@@ -516,7 +518,6 @@ mod impls {
             _ => return None,
         })
     }
-
     fn copy_user_bytes(current: &crate::process::Process, user_ptr: usize, buffer: &mut [u8]) -> bool {
         let mut copied = 0usize;
         while copied < buffer.len() {

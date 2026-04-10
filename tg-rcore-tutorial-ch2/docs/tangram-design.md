@@ -13,12 +13,13 @@ small and fixed-purpose so that the OS concepts stay visible.
    different applications.
 5. How a kernel-owned framebuffer can preserve state across process exits.
 
-## Why the crate vendors user apps
+## Why the crate vendors user-program sources
 
 The original workspace implementation depended on a sibling
 `tg-rcore-tutorial-user` crate with locally extended syscall bindings. A crate
 published to crates.io cannot rely on unpublished local path changes, so this
-package ships a minimal `user-apps/` helper crate.
+package ships a minimal `user-src/` source bundle and lets `build.rs` generate
+a temporary helper crate inside `OUT_DIR`.
 
 That helper crate contains exactly seven user programs:
 

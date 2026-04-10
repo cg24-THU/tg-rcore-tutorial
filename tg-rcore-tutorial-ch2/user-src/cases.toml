@@ -1,0 +1,12 @@
+[ch2]
+base = 0x8200_0000
+step = 0
+cases = [
+    "ch2_draw_piece_0",
+    "ch2_draw_piece_1",
+    "ch2_draw_piece_2",
+    "ch2_draw_piece_3",
+    "ch2_draw_piece_4",
+    "ch2_draw_piece_5",
+    "ch2_draw_piece_6",
+]

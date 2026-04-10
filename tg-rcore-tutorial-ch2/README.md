@@ -50,7 +50,7 @@ By running and reading this crate, you can practice:
 │   ├── graphics.rs         # VirtIO-GPU init and Tangram rendering
 │   └── main.rs             # batch loader, traps, syscall handling
 ├── test.sh                 # non-interactive regression test
-└── user-apps/              # minimal bundled user programs for this crate
+└── user-src/               # bundled user-program source templates for this crate
 ```
 
 ## Environment requirements
@@ -178,8 +178,9 @@ logo assembling step by step.
 
 ## Key design choices
 
-- The crate vendors a tiny `user-apps/` helper crate so that `cargo clone &&
-  cargo run` works without depending on unpublished local workspace edits.
+- The crate vendors `user-src/` templates, and `build.rs` materializes a tiny
+  helper crate in `OUT_DIR` so that `cargo clone && cargo run` works without
+  depending on unpublished local workspace edits.
 - The kernel handles syscall id `1043` directly before delegating the rest of
   the syscall table to the published `tg-rcore-tutorial-syscall` crate.
 - The framebuffer is initialized once and never cleared between apps, making

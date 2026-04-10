@@ -22,7 +22,7 @@ include = [
     "rust-toolchain.toml",
     "src/**",
     "test.sh",
-    "user-apps/**",
+    "user-src/**",
 ]
 
 [profile.dev]

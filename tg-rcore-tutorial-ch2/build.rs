@@ -2,6 +2,67 @@ use serde::Deserialize;
 use std::{collections::HashMap, env, fs, path::PathBuf, process::Command};
 
 const TARGET_ARCH: &str = "riscv64gc-unknown-none-elf";
+const BUNDLED_USER_CARGO_TOML: &str = r#"[package]
+name = "cg-tg-rcore-tutorial-t3l2-user-apps"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[lib]
+name = "cg_tg_rcore_tutorial_t3l2_user_apps"
+path = "src/lib.rs"
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+
+[workspace]
+"#;
+const BUNDLED_USER_BUILD_RS: &str = r#"fn main() {
+    use std::{env, fs, path::PathBuf};
+
+    println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-env-changed=BASE_ADDRESS");
+
+    if let Some(base) = env::var("BASE_ADDRESS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+    {
+        let script = format!(
+            "\
+OUTPUT_ARCH(riscv)
+ENTRY(_start)
+SECTIONS {{
+    . = {base};
+    .text : {{
+        *(.text.entry)
+        *(.text .text.*)
+    }}
+    .rodata : {{
+        *(.rodata .rodata.*)
+        *(.srodata .srodata.*)
+    }}
+    .data : {{
+        *(.data .data.*)
+        *(.sdata .sdata.*)
+    }}
+    .bss : {{
+        *(.bss .bss.*)
+        *(.sbss .sbss.*)
+    }}
+}}"
+        );
+        let linker = PathBuf::from(env::var_os("OUT_DIR").unwrap()).join("linker.ld");
+        fs::write(&linker, script).unwrap();
+        println!("cargo:rustc-link-arg=-T{}", linker.display());
+    }
+}
+"#;
+const BUNDLED_USER_CARGO_CONFIG: &str = r#"[build]
+target = "riscv64gc-unknown-none-elf"
+"#;
 
 // 以下三项均从 .cargo/config.toml [env] 节读取，不再硬编码：
 //   TG_USER_CRATE     — crates.io 包名
@@ -304,9 +365,9 @@ fn ensure_tg_user() -> PathBuf {
     // 发布后的独立 crate 优先使用包内自带的最小用户态程序集合，
     // 保证 `cargo clone && cargo run` 不依赖外部未发布的本地修改。
     let manifest_dir = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
-    let bundled_dir = manifest_dir.join("user-apps");
-    if bundled_dir.join("Cargo.toml").exists() {
-        return bundled_dir;
+    let bundled_source_dir = manifest_dir.join("user-src");
+    if bundled_source_dir.join("cases.toml").exists() {
+        return prepare_bundled_user_crate(&bundled_source_dir);
     }
 
     // 在教程仓库里开发时，优先复用同级目录的 tg-user 源码，避免依赖 cargo-clone。
@@ -364,6 +425,61 @@ fn ensure_tg_user() -> PathBuf {
     ensure_workspace_table(&tg_user_dir);
 
     tg_user_dir
+}
+
+fn prepare_bundled_user_crate(source_dir: &PathBuf) -> PathBuf {
+    let out_root = PathBuf::from(env::var_os("OUT_DIR").unwrap()).join("bundled-user-apps");
+    let src_root = out_root.join("src");
+    let bin_root = src_root.join("bin");
+    let cargo_root = out_root.join(".cargo");
+
+    println!(
+        "cargo:rerun-if-changed={}",
+        source_dir.join("cases.toml").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        source_dir.join("src").display()
+    );
+
+    if out_root.exists() {
+        fs::remove_dir_all(&out_root)
+            .unwrap_or_else(|err| panic!("failed to reset {}: {err}", out_root.display()));
+    }
+    fs::create_dir_all(&bin_root)
+        .unwrap_or_else(|err| panic!("failed to create {}: {err}", bin_root.display()));
+    fs::create_dir_all(&cargo_root)
+        .unwrap_or_else(|err| panic!("failed to create {}: {err}", cargo_root.display()));
+
+    fs::copy(source_dir.join("cases.toml"), out_root.join("cases.toml"))
+        .unwrap_or_else(|err| panic!("failed to copy bundled cases.toml: {err}"));
+    fs::copy(source_dir.join("src/lib.rs"), src_root.join("lib.rs"))
+        .unwrap_or_else(|err| panic!("failed to copy bundled user lib.rs: {err}"));
+
+    for entry in fs::read_dir(source_dir.join("src/bin"))
+        .unwrap_or_else(|err| panic!("failed to read bundled user bins: {err}"))
+    {
+        let entry = entry.unwrap_or_else(|err| panic!("failed to read bin entry: {err}"));
+        let path = entry.path();
+        if path.extension().and_then(|ext| ext.to_str()) == Some("rs") {
+            let dst = bin_root.join(
+                path.file_name()
+                    .unwrap_or_else(|| panic!("missing file name for {}", path.display())),
+            );
+            fs::copy(&path, dst).unwrap_or_else(|err| {
+                panic!("failed to copy bundled user bin {}: {err}", path.display())
+            });
+        }
+    }
+
+    fs::write(out_root.join("Cargo.toml"), BUNDLED_USER_CARGO_TOML)
+        .unwrap_or_else(|err| panic!("failed to write bundled Cargo.toml: {err}"));
+    fs::write(out_root.join("build.rs"), BUNDLED_USER_BUILD_RS)
+        .unwrap_or_else(|err| panic!("failed to write bundled build.rs: {err}"));
+    fs::write(cargo_root.join("config.toml"), BUNDLED_USER_CARGO_CONFIG)
+        .unwrap_or_else(|err| panic!("failed to write bundled cargo config: {err}"));
+
+    out_root
 }
 
 /// 若 Cargo.toml 末尾尚无 [workspace] 表，则追加一个空的，

@@ -1,0 +1,58 @@
+[package]
+name = "cg-tg-rcore-tutorial-t2l9"
+description = "A reproducible Rust learning crate for the tg-rcore-tutorial ch1/ch2 SMP extension experiment with per-hart stacks and primary-only batch execution."
+version = "0.0.0"
+edition = "2024"
+authors = ["YdrMaster <ydrml@hotmail.com>","Yifan Wang<w-yf22@mails.tsinghua.edu.cn>","Yu Chen <yuchen@tsinghua.edu.cn>"]
+rust-version = "1.85"
+default-run = "cg-tg-rcore-tutorial-t2l9"
+repository = "https://github.com/cg24-THU/tg-rcore-tutorial"
+homepage = "https://github.com/cg24-THU/tg-rcore-tutorial/tree/test/cg-tg-rcore-tutorial-t2l9"
+documentation = "https://docs.rs/cg-tg-rcore-tutorial-t2l9"
+license = "GPL-3.0"
+readme = "README.md"
+keywords = ["ai", "ai4ose", "kernel", "learning", "os"]
+categories = ["no-std", "embedded"]
+include = [
+    ".cargo/config.toml",
+    "assets/**",
+    "Cargo.toml",
+    "LICENSE",
+    "Makefile",
+    "README.md",
+    "build.rs",
+    "docs/**",
+    "report.md",
+    "rust-toolchain.toml",
+    "src/**",
+    "test.sh",
+    "tg-user/**",
+]
+
+[features]
+default = []
+no-lock-demo = []
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+
+[dependencies]
+riscv = "0.10.1"
+
+tg-sbi = { package = "cg-tg-rcore-tutorial-sbi-smp", path = "../cg-tg-rcore-tutorial-sbi-smp", version = "0.0.0", features = ["nobios"] }
+tg-linker = { package = "tg-rcore-tutorial-linker", path = "../tg-rcore-tutorial-linker", version = "0.4.8" }
+tg-console = { package = "tg-rcore-tutorial-console", path = "../tg-rcore-tutorial-console", version = "0.4.8" }
+tg-kernel-context = { package = "tg-rcore-tutorial-kernel-context", path = "../tg-rcore-tutorial-kernel-context", version = "0.4.8" }
+tg-syscall = { package = "tg-rcore-tutorial-syscall", path = "../tg-rcore-tutorial-syscall", version = "0.4.8", features = ["kernel"] }
+
+[build-dependencies]
+tg-linker = { package = "tg-rcore-tutorial-linker", path = "../tg-rcore-tutorial-linker", version = "0.4.8" }
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+xmas-elf = "0.8.0"
+
+[package.metadata.docs.rs]
+targets = ["riscv64gc-unknown-none-elf"]

@@ -1,0 +1,29 @@
+[package]
+name = "cg-tg-rcore-tutorial-sbi-smp"
+description = "SMP-safe SBI support crate for the publishable cg-tg-rcore-tutorial t2l9/t2l11 learning kernels."
+version = "0.0.0"
+edition = "2024"
+authors = ["Ivans-11 <w-yf22@mails.tsinghua.edu.cn>"]
+rust-version = "1.85"
+repository = "https://github.com/cg24-THU/tg-rcore-tutorial"
+homepage = "https://github.com/cg24-THU/tg-rcore-tutorial/tree/test/cg-tg-rcore-tutorial-sbi-smp"
+documentation = "https://docs.rs/cg-tg-rcore-tutorial-sbi-smp"
+license = "GPL-3.0"
+readme = "README.md"
+keywords = ["ai", "ai4ose", "kernel", "learning", "os"]
+categories = ["no-std", "embedded"]
+include = [
+    "Cargo.toml",
+    "LICENSE",
+    "README.md",
+    "src/**",
+]
+
+[features]
+default = []
+nobios = []
+
+[package.metadata.docs.rs]
+targets = ["riscv64gc-unknown-none-elf"]
+
+[dependencies]

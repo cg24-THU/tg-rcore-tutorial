@@ -1,0 +1,80 @@
+[package]
+name = "cg-tg-rcore-tutorial-t2l11"
+description = "A reproducible Rust learning crate for the tg-rcore-tutorial ch6/ch8 SMP extension experiment with multi-hart safe boot and primary-only kernel execution."
+version = "0.0.0"
+edition = "2024"
+authors = ["YdrMaster <ydrml@hotmail.com>", "Yifan Wang <w-yf22@mails.tsinghua.edu.cn>", "Yu Chen <yuchen@tsinghua.edu.cn>"]
+rust-version = "1.85"
+default-run = "cg-tg-rcore-tutorial-t2l11"
+repository = "https://github.com/cg24-THU/tg-rcore-tutorial"
+homepage = "https://github.com/cg24-THU/tg-rcore-tutorial/tree/test/cg-tg-rcore-tutorial-t2l11"
+documentation = "https://docs.rs/cg-tg-rcore-tutorial-t2l11"
+license = "GPL-3.0"
+readme = "README.md"
+keywords = ["ai", "ai4ose", "kernel", "learning", "os"]
+categories = ["no-std", "embedded"]
+autobins = false
+include = [
+    ".cargo/config.toml",
+    "assets/**",
+    "Cargo.toml",
+    "LICENSE",
+    "Makefile",
+    "README.md",
+    "build.rs",
+    "docs/**",
+    "exercise.md",
+    "report_ch6_ch8_smp.md",
+    "rust-toolchain.toml",
+    "src/**",
+    "test.sh",
+    "tg-user/**",
+]
+
+[features]
+exercise = []
+companion-ch6 = []
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+
+[dependencies]
+virtio-drivers = "0.1.0"
+xmas-elf = "0.8.0"
+riscv = "0.10.1"
+spin = "0.9"
+
+tg-sbi = { package = "cg-tg-rcore-tutorial-sbi-smp", path = "../cg-tg-rcore-tutorial-sbi-smp", version = "0.0.0", features = ["nobios"] }
+tg-linker = { package = "tg-rcore-tutorial-linker", path = "../tg-rcore-tutorial-linker", version = "0.4.8" }
+tg-console = { package = "tg-rcore-tutorial-console", path = "../tg-rcore-tutorial-console", version = "0.4.8" }
+tg-kernel-context = { package = "tg-rcore-tutorial-kernel-context", path = "../tg-rcore-tutorial-kernel-context", version = "0.4.8", features = ["foreign"] }
+tg-kernel-alloc = { package = "tg-rcore-tutorial-kernel-alloc", path = "../tg-rcore-tutorial-kernel-alloc", version = "0.4.8" }
+tg-kernel-vm = { package = "tg-rcore-tutorial-kernel-vm", path = "../tg-rcore-tutorial-kernel-vm", version = "0.4.8" }
+tg-syscall = { package = "tg-rcore-tutorial-syscall", path = "../tg-rcore-tutorial-syscall", version = "0.4.8", features = ["kernel"] }
+tg-task-manage = { package = "tg-rcore-tutorial-task-manage", path = "../tg-rcore-tutorial-task-manage", version = "0.4.8", features = ["proc", "thread"] }
+tg-easy-fs = { package = "tg-rcore-tutorial-easy-fs", path = "../tg-rcore-tutorial-easy-fs", version = "0.4.8" }
+tg-signal = { package = "tg-rcore-tutorial-signal", path = "../tg-rcore-tutorial-signal", version = "0.4.8" }
+tg-signal-impl = { package = "tg-rcore-tutorial-signal-impl", path = "../tg-rcore-tutorial-signal-impl", version = "0.4.8" }
+tg-sync = { package = "tg-rcore-tutorial-sync", path = "../tg-rcore-tutorial-sync", version = "0.4.8" }
+
+[build-dependencies]
+tg-linker = { package = "tg-rcore-tutorial-linker", path = "../tg-rcore-tutorial-linker", version = "0.4.8" }
+tg-easy-fs = { package = "tg-rcore-tutorial-easy-fs", path = "../tg-rcore-tutorial-easy-fs", version = "0.4.8" }
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+xz2 = "0.1"
+
+[package.metadata.docs.rs]
+targets = ["riscv64gc-unknown-none-elf"]
+
+[[bin]]
+name = "cg-tg-rcore-tutorial-t2l11"
+path = "src/main.rs"
+
+[[bin]]
+name = "ch6_smp"
+path = "src/bin/ch6_smp/main.rs"
+required-features = ["companion-ch6"]

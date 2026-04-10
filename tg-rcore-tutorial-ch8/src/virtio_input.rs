@@ -1,6 +1,6 @@
 //! VirtIO keyboard input driver.
 
-use crate::{build_flags, Sv39, KERNEL_SPACE};
+use crate::{KERNEL_SPACE, Sv39, build_flags};
 use alloc::{
     alloc::{alloc_zeroed, dealloc},
     sync::Arc,

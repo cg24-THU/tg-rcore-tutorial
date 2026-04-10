@@ -1,0 +1,25 @@
+[package]
+name = "cg-tg-rcore-tutorial-t3l8-syscall"
+description = "Extended syscall definitions and user/kernel interfaces used by the publishable tg-rcore-tutorial chapter 8 release crate."
+version = "0.0.0"
+edition = "2024"
+authors = ["YdrMaster <ydrml@hotmail.com>"]
+repository = "https://github.com/cg24-THU/tg-rcore-tutorial"
+homepage = "https://github.com/cg24-THU/tg-rcore-tutorial/tree/test/cg-tg-rcore-tutorial-t3l8-syscall"
+documentation = "https://docs.rs/cg-tg-rcore-tutorial-t3l8-syscall"
+license = "GPL-3.0"
+readme = "README.md"
+keywords = ["ai", "ai4ose", "kernel", "learning", "os"]
+categories = ["no-std", "embedded"]
+
+[dependencies]
+spin = "0.9"
+bitflags = "1.2"
+tg-signal-defs = { package = "tg-rcore-tutorial-signal-defs", path = "../tg-rcore-tutorial-signal-defs", version = "0.4.8" }
+
+[features]
+kernel = []
+user = []
+
+[package.metadata.docs.rs]
+targets = ["riscv64gc-unknown-none-elf"]

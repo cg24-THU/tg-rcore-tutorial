@@ -1,0 +1,17 @@
+[package]
+name = "cg-tg-rcore-tutorial-t3l8-easy-fs"
+description = "Extended EasyFS support crate used by the publishable tg-rcore-tutorial chapter 8 release crate."
+version = "0.0.0"
+edition = "2024"
+authors = ["Yifan Wu <shinbokuow@163.com>"]
+repository = "https://github.com/cg24-THU/tg-rcore-tutorial"
+homepage = "https://github.com/cg24-THU/tg-rcore-tutorial/tree/test/cg-tg-rcore-tutorial-t3l8-easy-fs"
+documentation = "https://docs.rs/cg-tg-rcore-tutorial-t3l8-easy-fs"
+license = "GPL-3.0"
+readme = "README.md"
+keywords = ["ai", "ai4ose", "kernel", "learning", "os"]
+categories = ["no-std", "embedded", "filesystem"]
+
+[dependencies]
+spin = "0.9"
+bitflags = "1.2"

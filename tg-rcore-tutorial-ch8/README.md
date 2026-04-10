@@ -1,101 +1,113 @@
-# cg-tg-rcore-tutorial-ch8
+# cg-tg-rcore-tutorial-t3l8
 
-`cg-tg-rcore-tutorial-ch8` is a reproducible and publishable Rust crate for chapter 8 of the `tg-rcore-tutorial` operating-system labs. It packages a RISC-V teaching kernel focused on concurrency: threads, synchronization primitives, and deadlock detection.
+`cg-tg-rcore-tutorial-t3l8` is a reproducible Rust learning crate built from the `tg-rcore-tutorial` chapter 8 experiment. It preserves the original chapter-8 teaching goals around threads, synchronization primitives, and deadlock detection, and it keeps the framebuffer / keyboard path that was later added for a user-mode DoomGeneric demo on QEMU.
 
-This crate is designed to be both:
+This crate is prepared for two concrete use cases:
 
-- a learning-oriented OS kernel artifact for students
-- a reproducible submission artifact for TAs and instructors
+- learners reading and extending a non-trivial RISC-V teaching kernel
+- TAs or instructors who need a crate that can be cloned, built, and run again with minimal hidden setup
 
-## Project Introduction
+## Project Intro
 
-This experiment turns the earlier single-threaded process model into a thread-aware kernel:
+The kernel starts from the standard chapter 8 structure:
 
-- `Process` is the resource container
+- `Process` is the shared resource container
 - `Thread` is the execution unit
-- PID/TID relations are maintained by `PThreadManager`
-- blocking synchronization is provided through mutexes, semaphores, and condition variables
-- the chapter exercise adds deadlock detection for mutex and semaphore requests
+- blocking `Mutex`, `Semaphore`, and `Condvar` syscalls are wired into the scheduler
+- chapter exercise mode adds deadlock detection for mutexes and semaphores
 
-The current crate includes the completed exercise result for chapter 8.
+The current experiment snapshot also includes:
+
+- VirtIO GPU framebuffer support
+- VirtIO keyboard input support
+- user-space DoomGeneric porting glue
+- easy-fs packing of `doom1.wad` when a shareware WAD is available
 
 ## Learning Goals
 
-This crate helps learners study and practice:
+This crate is meant to help you learn and practice:
 
-- the difference between process resources and thread execution state
-- thread creation, exit, and join in a kernel
-- blocking synchronization and wake-up paths
-- how trap handling, syscalls, and the scheduler interact
-- deadlock detection strategies in a teaching OS kernel
+- the difference between process-as-resource-container and thread-as-execution-unit
+- thread creation, join, and blocking state transitions
+- kernel synchronization primitives in a teaching OS
+- deadlock detection with wait-for graph and safety-check style reasoning
+- framebuffer output and keyboard event delivery in a small RISC-V kernel
+- how to port a user-space graphical program onto a teaching kernel
 
-## Functionality
+## Features
 
-- RISC-V64 no-std kernel startup
-- user ELF loading and easy-fs image packing
-- thread-aware scheduling and PID/TID bookkeeping
-- blocking `Mutex`, `Semaphore`, and `Condvar` syscalls
-- chapter 8 deadlock detection with `enable_deadlock_detect`
-- packaged exercise statement and implementation report for study and grading
+- RISC-V64 `no_std` kernel for QEMU virt
+- chapter 8 thread and synchronization support
+- exercise-mode deadlock detection
+- VirtIO block, GPU, and keyboard drivers
+- integrated user app packaging through easy-fs
+- bundled `tg-user` snapshot so `cargo clone && cargo run` does not depend on a drifting external user crate
+- optional Doom shareware WAD auto-detection via `TG_DOOM_WAD`
 
 ## Project Structure
 
 ```text
 tg-rcore-tutorial-ch8/
-├── .cargo/config.toml
-├── Cargo.toml
-├── Makefile
-├── README.md
-├── build.rs
-├── exercise.md
-├── report.md
-├── rust-toolchain.toml
-├── test.sh
+├── .cargo/config.toml   # target + QEMU runner
+├── build.rs             # builds user apps and packs fs.img
+├── Cargo.toml           # release metadata for crates.io
+├── docs/reproduce.md    # reproducible setup notes
+├── exercise.md          # chapter exercise description
+├── report.md            # implementation notes
+├── tg-user/             # bundled user-space app snapshot with DoomGeneric support
+├── Makefile             # convenience wrappers
 └── src/
-    ├── fs.rs
-    ├── main.rs
-    ├── process.rs
-    ├── processor.rs
-    ├── virtio_block.rs
-    ├── virtio_gpu.rs
-    └── virtio_input.rs
+    ├── main.rs          # kernel init, trap loop, syscall dispatch
+    ├── process.rs       # Process / Thread split and deadlock state
+    ├── processor.rs     # scheduler-side thread management
+    ├── fs.rs            # file descriptor abstractions
+    ├── virtio_block.rs  # block device driver
+    ├── virtio_gpu.rs    # framebuffer support
+    └── virtio_input.rs  # keyboard input support
 ```
 
 ## Environment Requirements
 
-- Rust stable
+- Rust stable `>= 1.85`
 - target `riscv64gc-unknown-none-elf`
-- `qemu-system-riscv64`
-- `cargo-clone`
+- QEMU with `qemu-system-riscv64`
+- a C toolchain for bundled Doom support:
+  - `riscv64-unknown-elf-gcc`
+  - `riscv64-unknown-elf-ar`
+  - picolibc for `riscv64-unknown-elf`
+- optional shareware WAD for Doom:
+  - set `TG_DOOM_WAD=/path/to/doom1.wad`
+  - or install `doom-wad-shareware`
 
-Recommended setup:
+Minimum Rust setup:
 
 ```bash
 rustup toolchain install stable
 rustup target add riscv64gc-unknown-none-elf
-cargo install cargo-clone
 ```
 
-Install QEMU:
+On macOS:
 
 ```bash
-# macOS
 brew install qemu
+```
 
-# Debian / Ubuntu
+On Debian / Ubuntu:
+
+```bash
 sudo apt update
-sudo apt install qemu-system-misc
+sudo apt install qemu-system-misc gcc-riscv64-unknown-elf picolibc-riscv64-unknown-elf
 ```
 
 ## Build And Run
 
-Run the normal chapter image:
+Base chapter run:
 
 ```bash
 cargo run
 ```
 
-Run the exercise image:
+Exercise mode:
 
 ```bash
 cargo run --features exercise
@@ -108,25 +120,31 @@ make run
 make run-exercise
 ```
 
+After the kernel boots into `Rust user shell`, you can run normal chapter-8 user programs such as `threads`, `sync_sem`, and `test_condvar`. If a WAD has been packed into `fs.img`, you can also run:
+
+```text
+doom
+```
+
 ## Reproduce
 
-### From crates.io
+### Option 1: clone from crates.io
 
 ```bash
-cargo clone cg-tg-rcore-tutorial-ch8
-cd cg-tg-rcore-tutorial-ch8
+cargo clone cg-tg-rcore-tutorial-t3l8
+cd cg-tg-rcore-tutorial-t3l8
 cargo run
 ```
 
 Or:
 
 ```bash
-cargo clone cg-tg-rcore-tutorial-ch8
-cd cg-tg-rcore-tutorial-ch8
+cargo clone cg-tg-rcore-tutorial-t3l8
+cd cg-tg-rcore-tutorial-t3l8
 make run
 ```
 
-### From git
+### Option 2: clone from git
 
 ```bash
 git clone https://github.com/cg24-THU/tg-rcore-tutorial.git
@@ -142,76 +160,64 @@ cd tg-rcore-tutorial/tg-rcore-tutorial-ch8
 make run
 ```
 
-## Validation
+## Test And Validation
 
-Base checks:
+Base checker:
 
 ```bash
 bash ./test.sh base
 ```
 
-Exercise checks:
+Exercise checker:
 
 ```bash
 bash ./test.sh exercise
 ```
 
-All checks:
+Both:
 
 ```bash
 bash ./test.sh all
 ```
 
-## Notes On User Programs
+## Example Output
 
-`build.rs` resolves user programs in this order:
-
-1. `TG_USER_DIR` if explicitly set
-2. sibling `../tg-rcore-tutorial-user`
-3. `cargo clone tg-rcore-tutorial-user`
-
-That means a standalone clone from crates.io needs `cargo-clone` unless `TG_USER_DIR` is already configured.
-
-## Output Example
-
-Typical boot output includes:
+Typical boot log:
 
 ```text
-[ INFO] .text ----> 0x80200000..0x80257000
-[ INFO] .rodata --> 0x80257000..0x80268000
-[ INFO] .data ----> 0x80268000..0x80268420
+[ INFO] .text ----> 0x80200000..0x8026xxxx
 [ INFO] MMIO range -> 0x10001000..0x10002000
+Rust user shell
+>> threads
 ```
 
-Exercise success output should include:
+If Doom support is active, you should also see:
 
 ```text
-deadlock test mutex 1 OK!
-deadlock test semaphore 1 OK!
-deadlock test semaphore 2 OK!
+doom: framebuffer 1280x800 stride=5120 format=1
+doom: first frame flushed
 ```
 
-## Version And Tag
+## Version And Tag Mapping
 
-- Crate version: `0.0.0`
-- Git tag: `v0.0.0`
+- crate version: `0.0.0`
+- git tag: `v0.0.0`
 
-Mapping:
+Release mapping:
 
 ```text
-v0.0.0 -> cg-tg-rcore-tutorial-ch8 0.0.0
+v0.0.0 -> cg-tg-rcore-tutorial-t3l8 0.0.0
 ```
 
-## Included Documents
+## Included Learning Documents
 
-- [`exercise.md`](./exercise.md): exercise requirements
-- [`report.md`](./report.md): implementation notes and debug record
+- [`exercise.md`](./exercise.md): original chapter-8 exercise statement
+- [`report.md`](./report.md): implementation notes and debugging record
+- [`docs/reproduce.md`](./docs/reproduce.md): reproducible setup checklist for reviewers
 
-These files are intentionally included in the published package so the crate can help both the author and other learners improve OS kernel understanding through direct reading and reproduction.
-
-## Limitations
+## Notes
 
 - this is a teaching kernel, not a production OS
-- deadlock detection follows the chapter scope and handles mutexes and semaphores separately
-- `cargo run` requires a working local QEMU installation
-- the first standalone build may need network access for user-program fetching
+- `cargo run` depends on local QEMU availability
+- Doom is optional at build time; the kernel itself still runs without a WAD
+- the bundled `tg-user` snapshot is included specifically so the published crate remains reproducible even when upstream user crates evolve

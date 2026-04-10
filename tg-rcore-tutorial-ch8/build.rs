@@ -45,9 +45,8 @@ fn should_skip_build_apps() -> bool {
 
 fn write_linker() {
     let ld = PathBuf::from(env::var_os("OUT_DIR").unwrap()).join("linker.ld");
-    fs::write(&ld, tg_linker::NOBIOS_SCRIPT).unwrap_or_else(|err| {
-        panic!("failed to write linker script to {}: {}", ld.display(), err)
-    });
+    fs::write(&ld, tg_linker::NOBIOS_SCRIPT)
+        .unwrap_or_else(|err| panic!("failed to write linker script to {}: {}", ld.display(), err));
     println!("cargo:rustc-link-arg=-T{}", ld.display());
 }
 
@@ -72,14 +71,20 @@ fn build_apps_and_pack_fs() {
         "cargo:rerun-if-changed={}",
         tg_user_root.join("Cargo.toml").display()
     );
-    println!("cargo:rerun-if-changed={}", tg_user_root.join("src").display());
+    println!(
+        "cargo:rerun-if-changed={}",
+        tg_user_root.join("src").display()
+    );
 
     let cfg = fs::read_to_string(&cases_path).unwrap_or_else(|err| {
-        panic!("failed to read cases.toml from {}: {}", cases_path.display(), err)
+        panic!(
+            "failed to read cases.toml from {}: {}",
+            cases_path.display(),
+            err
+        )
     });
-    let mut cases_map: HashMap<String, Cases> = toml::from_str(&cfg).unwrap_or_else(|err| {
-        panic!("failed to parse cases.toml: {err}")
-    });
+    let mut cases_map: HashMap<String, Cases> =
+        toml::from_str(&cfg).unwrap_or_else(|err| panic!("failed to parse cases.toml: {err}"));
 
     let case_key = if env::var("CARGO_FEATURE_EXERCISE").is_ok() {
         "ch8_exercise"
@@ -92,18 +97,15 @@ fn build_apps_and_pack_fs() {
     let names = cases.cases.unwrap_or_default();
 
     if names.is_empty() {
-        panic!("no user cases found for {case_key} in {}", cases_path.display());
+        panic!(
+            "no user cases found for {case_key} in {}",
+            cases_path.display()
+        );
     }
 
     let manifest_dir = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
-    let fs_target_dir = manifest_dir
-        .join("target")
-        .join(TARGET_ARCH)
-        .join("debug");
-    let app_target_dir = tg_user_root
-        .join("target")
-        .join(TARGET_ARCH)
-        .join("debug");
+    let fs_target_dir = manifest_dir.join("target").join(TARGET_ARCH).join("debug");
+    let app_target_dir = tg_user_root.join("target").join(TARGET_ARCH).join("debug");
 
     for (i, name) in names.iter().enumerate() {
         let base_address = base + i as u64 * step;
@@ -134,7 +136,9 @@ fn build_user_app(tg_user_root: &PathBuf, name: &str, base_address: u64) {
         cmd.env("BASE_ADDRESS", base_address.to_string());
     }
 
-    let status = cmd.status().expect("failed to execute cargo build for user app");
+    let status = cmd
+        .status()
+        .expect("failed to execute cargo build for user app");
     if !status.success() {
         panic!("failed to build user app {name}");
     }
@@ -160,7 +164,11 @@ impl BlockDevice for BlockFile {
     }
 }
 
-fn easy_fs_pack(cases: &[String], app_target: &PathBuf, fs_target: &PathBuf) -> std::io::Result<()> {
+fn easy_fs_pack(
+    cases: &[String],
+    app_target: &PathBuf,
+    fs_target: &PathBuf,
+) -> std::io::Result<()> {
     use std::fs::OpenOptions;
     use std::io::Read;
     use std::sync::Arc;
@@ -190,7 +198,10 @@ fn easy_fs_pack(cases: &[String], app_target: &PathBuf, fs_target: &PathBuf) -> 
     }
 
     if let Some(wad_path) = find_doom_wad() {
-        println!("cargo:warning=packing Doom IWAD from {}", wad_path.display());
+        println!(
+            "cargo:warning=packing Doom IWAD from {}",
+            wad_path.display()
+        );
         let mut host_file = std::fs::File::open(&wad_path)?;
         let mut all_data: Vec<u8> = Vec::new();
         host_file.read_to_end(&mut all_data)?;
@@ -241,8 +252,16 @@ fn ensure_tg_user() -> PathBuf {
         }
     }
 
-    // 其次优先复用仓库中的兄弟目录，而不是在构建时尝试 cargo clone。
+    // 对 crates.io 发布包，优先复用 crate 内嵌的 tg-user 快照，
+    // 这样 cargo clone 后无需依赖外部用户态 crate 的版本漂移。
     let manifest_dir = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
+    let bundled_dir = manifest_dir.join("tg-user");
+    if bundled_dir.join("Cargo.toml").exists() {
+        ensure_workspace_table(&bundled_dir);
+        return bundled_dir;
+    }
+
+    // 其次优先复用仓库中的兄弟目录，而不是在构建时尝试 cargo clone。
     let sibling_dir = manifest_dir
         .parent()
         .map(|parent| parent.join("tg-rcore-tutorial-user"))
@@ -306,9 +325,15 @@ fn ensure_workspace_table(dir: &PathBuf) {
     let cargo_toml = dir.join("Cargo.toml");
     let content = fs::read_to_string(&cargo_toml).unwrap_or_default();
     if !content.contains("[workspace]") {
-        fs::write(&cargo_toml, format!("{}
+        fs::write(
+            &cargo_toml,
+            format!(
+                "{}
 [workspace]
-", content))
-            .unwrap_or_else(|err| panic!("failed to patch Cargo.toml in {}: {}", dir.display(), err));
+",
+                content
+            ),
+        )
+        .unwrap_or_else(|err| panic!("failed to patch Cargo.toml in {}: {}", dir.display(), err));
     }
 }

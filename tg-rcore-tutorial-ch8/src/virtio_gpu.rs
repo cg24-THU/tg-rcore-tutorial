@@ -1,6 +1,6 @@
 //! VirtIO GPU framebuffer driver.
 
-use crate::{build_flags, Sv39, KERNEL_SPACE};
+use crate::{KERNEL_SPACE, Sv39, build_flags};
 use alloc::{
     alloc::{alloc_zeroed, dealloc},
     sync::Arc,
@@ -16,9 +16,8 @@ const VIRTIO_GPU0: usize = 0x1000_2000;
 /// Kernel-managed framebuffer instance.
 pub static GPU_DEVICE: Lazy<Arc<Mutex<GpuDevice>>> = Lazy::new(|| {
     Arc::new(Mutex::new(unsafe {
-        let transport =
-            MmioTransport::new(NonNull::new(VIRTIO_GPU0 as *mut VirtIOHeader).unwrap())
-                .expect("failed to create GPU transport");
+        let transport = MmioTransport::new(NonNull::new(VIRTIO_GPU0 as *mut VirtIOHeader).unwrap())
+            .expect("failed to create GPU transport");
         let mut gpu =
             VirtIOGpu::<VirtioHal, MmioTransport>::new(transport).expect("failed to init GPU");
         let (width, height) = gpu.resolution().expect("failed to query GPU resolution");

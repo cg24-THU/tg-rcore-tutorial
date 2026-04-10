@@ -13,7 +13,7 @@ timeout 3s qemu-system-riscv64 \
     -device virtio-gpu-device \
     -serial "file:$LOG_FILE" \
     -monitor none \
-    -kernel target/riscv64gc-unknown-none-elf/debug/tg-rcore-tutorial-ch1 \
+    -kernel target/riscv64gc-unknown-none-elf/debug/cg-tg-rcore-tutorial-t3l1 \
     >/dev/null 2>&1 || true
 
 OUTPUT=$(cat "$LOG_FILE" 2>/dev/null || true)

@@ -4,14 +4,15 @@
 //! 在 QEMU 图形窗口中静态渲染七巧板风格的 “OS” 图案。
 
 // 不使用标准库，因为裸机环境没有操作系统提供系统调用支持
-#![no_std]
+#![cfg_attr(target_arch = "riscv64", no_std)]
 // 不使用标准入口，因为裸机环境没有 C runtime 进行初始化
-#![no_main]
+#![cfg_attr(target_arch = "riscv64", no_main)]
 // RISC-V64 架构下启用严格警告和文档检查
 #![cfg_attr(target_arch = "riscv64", deny(warnings, missing_docs))]
 // 非 RISC-V64 架构允许死代码（用于 cargo publish --dry-run 在主机上通过编译）
 #![cfg_attr(not(target_arch = "riscv64"), allow(dead_code))]
 
+#[cfg(target_arch = "riscv64")]
 use tg_sbi::shutdown;
 
 #[cfg(target_arch = "riscv64")]
@@ -20,6 +21,7 @@ use core::ptr::NonNull;
 use virtio_drivers::{DeviceType, MmioTransport, Transport, VirtIOGpu, VirtIOHeader};
 
 /// 裸机全局分配器。
+#[cfg(target_arch = "riscv64")]
 #[global_allocator]
 static GLOBAL_ALLOCATOR: memory::KernelAllocator = memory::KernelAllocator;
 
@@ -92,8 +94,8 @@ extern "C" fn rust_main() -> ! {
 fn render_tangram() -> Result<(u32, u32), &'static str> {
     let transport = find_gpu_transport().ok_or("VirtIO-GPU device not found")?;
 
-    let mut gpu =
-        VirtIOGpu::<memory::VirtioHal, MmioTransport>::new(transport).map_err(|_| "GPU init failed")?;
+    let mut gpu = VirtIOGpu::<memory::VirtioHal, MmioTransport>::new(transport)
+        .map_err(|_| "GPU init failed")?;
     let (width, height) = gpu.resolution().map_err(|_| "failed to get resolution")?;
 
     {
@@ -126,6 +128,7 @@ fn find_gpu_transport() -> Option<MmioTransport> {
 /// panic 处理函数。
 ///
 /// `#![no_std]` 环境下必须自行实现。发生 panic 时以异常状态关机。
+#[cfg(target_arch = "riscv64")]
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
     console::puts("panic\n");
@@ -455,7 +458,10 @@ mod drawing {
         }
 
         fn clear(&mut self, color: Color) {
-            let pixels = min(self.width.saturating_mul(self.height), self.framebuffer.len() / 4);
+            let pixels = min(
+                self.width.saturating_mul(self.height),
+                self.framebuffer.len() / 4,
+            );
             for index in 0..pixels {
                 let base = index * 4;
                 self.framebuffer[base] = color.b;
@@ -559,25 +565,8 @@ mod drawing {
     }
 }
 
-/// 非 RISC-V64 架构的占位模块。
+/// 主机平台占位入口。
 ///
-/// 提供 `main` 等符号，使得在主机平台（如 x86_64）上也能通过编译，
-/// 满足 `cargo publish --dry-run` 和 `cargo test` 的需求。
+/// 用于 `cargo publish` 在宿主机上验证打包内容。
 #[cfg(not(target_arch = "riscv64"))]
-mod stub {
-    /// 主机平台占位入口
-    #[unsafe(no_mangle)]
-    pub extern "C" fn main() -> i32 {
-        0
-    }
-
-    /// C 运行时占位
-    #[unsafe(no_mangle)]
-    pub extern "C" fn __libc_start_main() -> i32 {
-        0
-    }
-
-    /// Rust 异常处理人格占位
-    #[unsafe(no_mangle)]
-    pub extern "C" fn rust_eh_personality() {}
-}
+fn main() {}

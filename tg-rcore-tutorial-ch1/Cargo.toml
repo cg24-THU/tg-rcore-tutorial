@@ -1,16 +1,35 @@
 [package]
-name = "tg-rcore-tutorial-ch1"
-description = "Chapter 1 of rCore Tutorial: A minimal bare-metal application running in RISC-V S-mode."
-version = "0.4.8"
+name = "cg-tg-rcore-tutorial-t3l1"
+description = "A learning-oriented rCore Tutorial Chapter 1 kernel experiment that renders a static tangram-style \"OS\" image through VirtIO-GPU framebuffer output."
+version = "0.0.0"
 edition = "2024"
-authors = ["YdrMaster <ydrml@hotmail.com>","Yifan Wang<w-yf22@mails.tsinghua.edu.cn>","Yu Chen <yuchen@tsinghua.edu.cn>"]
-repository = "https://github.com/rcore-os/tg-rcore-tutorial-ch1"
-homepage = "https://github.com/rcore-os/tg-rcore-tutorial-ch1/tree/test"
-documentation = "https://docs.rs/tg-rcore-tutorial-ch1"
+authors = ["Chaoge"]
+repository = "https://github.com/cg24-THU/tg-rcore-tutorial"
+homepage = "https://github.com/cg24-THU/tg-rcore-tutorial/tree/test/tg-rcore-tutorial-ch1"
+documentation = "https://docs.rs/cg-tg-rcore-tutorial-t3l1"
 license = "GPL-3.0"
 readme = "README.md"
-keywords = ["rcore", "tutorial", "no-std", "riscv", "bare-metal"]
+rust-version = "1.85"
+keywords = ["ai", "ai4ose", "kernel", "learning", "os"]
 categories = ["no-std", "embedded"]
+include = [
+    "src/main.rs",
+    "README.md",
+    "Cargo.toml",
+    "Cargo.lock",
+    "build.rs",
+    "rust-toolchain.toml",
+    ".cargo/config.toml",
+    "Makefile",
+    "docs/**",
+    "test.sh",
+]
+
+[[bin]]
+name = "cg-tg-rcore-tutorial-t3l1"
+path = "src/main.rs"
+test = false
+bench = false
 
 [profile.dev]
 panic = "abort"

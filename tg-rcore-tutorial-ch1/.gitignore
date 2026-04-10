@@ -3,3 +3,5 @@ target
 *.bin
 *.img
 Cargo.lock
+._*
+.DS_Store

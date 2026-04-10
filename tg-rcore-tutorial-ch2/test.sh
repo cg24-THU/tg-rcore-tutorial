@@ -13,7 +13,7 @@ timeout 15s qemu-system-riscv64 \
     -device virtio-gpu-device \
     -serial "file:$LOG_FILE" \
     -monitor none \
-    -kernel target/riscv64gc-unknown-none-elf/debug/tg-rcore-tutorial-ch2 \
+    -kernel target/riscv64gc-unknown-none-elf/debug/cg-tg-rcore-tutorial-t3l2 \
     >/dev/null 2>&1
 
 required_patterns=(

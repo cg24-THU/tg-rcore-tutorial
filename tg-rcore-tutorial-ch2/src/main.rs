@@ -112,8 +112,7 @@ extern "C" fn rust_main() -> ! {
         let mut ctx = LocalContext::user(app_base);
 
         // 分配用户栈（4 KiB），使用 MaybeUninit 避免不必要的零初始化
-        let mut user_stack: core::mem::MaybeUninit<[usize; 512]> =
-            core::mem::MaybeUninit::uninit();
+        let mut user_stack: core::mem::MaybeUninit<[usize; 512]> = core::mem::MaybeUninit::uninit();
         let user_stack_ptr = user_stack.as_mut_ptr() as *mut usize;
         // 将用户栈顶地址写入上下文的 sp 寄存器
         *ctx.sp_mut() = unsafe { user_stack_ptr.add(512) } as usize;
@@ -133,7 +132,7 @@ extern "C" fn rust_main() -> ! {
                 Trap::Exception(Exception::UserEnvCall) => {
                     use SyscallResult::*;
                     match handle_syscall(&mut ctx) {
-                        Done => continue,           // 系统调用处理完成，继续执行
+                        Done => continue, // 系统调用处理完成，继续执行
                         Exit(code) => log::info!("app{i} exit with code {code}"),
                         Error(id) => {
                             log::error!("app{i} call an unsupported syscall {}", id.0)
@@ -183,6 +182,9 @@ enum SyscallResult {
     Error(SyscallId),
 }
 
+/// 自定义的七巧板绘制系统调用号。
+const DRAW_PIECE_SYSCALL_ID: usize = 1043;
+
 /// 处理系统调用。
 ///
 /// 从用户上下文中提取系统调用 ID（a7 寄存器）和参数（a0-a5 寄存器），
@@ -191,9 +193,16 @@ fn handle_syscall(ctx: &mut LocalContext) -> SyscallResult {
     use tg_syscall::{SyscallId as Id, SyscallResult as Ret};
 
     // a7 寄存器存放 syscall ID
-    let id = ctx.a(7).into();
+    let raw_id = ctx.a(7);
+    let id = raw_id.into();
     // a0-a5 寄存器存放系统调用参数
     let args = [ctx.a(0), ctx.a(1), ctx.a(2), ctx.a(3), ctx.a(4), ctx.a(5)];
+
+    if raw_id == DRAW_PIECE_SYSCALL_ID {
+        *ctx.a_mut(0) = crate::graphics::draw_piece(args[0]) as usize;
+        ctx.move_next();
+        return SyscallResult::Done;
+    }
 
     match tg_syscall::handle(Caller { entity: 0, flow: 0 }, id, args) {
         Ret::Done(ret) => match id {
@@ -231,13 +240,7 @@ mod impls {
 
     /// IO 系统调用实现：处理 write 系统调用
     impl tg_syscall::IO for SyscallContext {
-        fn write(
-            &self,
-            _caller: tg_syscall::Caller,
-            fd: usize,
-            buf: usize,
-            count: usize,
-        ) -> isize {
+        fn write(&self, _caller: tg_syscall::Caller, fd: usize, buf: usize, count: usize) -> isize {
             match fd {
                 // 标准输出和调试输出：将缓冲区内容打印到控制台
                 STDOUT | STDDEBUG => {
@@ -254,10 +257,6 @@ mod impls {
                     -1
                 }
             }
-        }
-
-        fn draw_piece(&self, _caller: tg_syscall::Caller, piece_id: usize) -> isize {
-            crate::graphics::draw_piece(piece_id)
         }
     }
 

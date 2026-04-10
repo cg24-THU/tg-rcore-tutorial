@@ -1,19 +1,28 @@
 [package]
-name = "tg-rcore-tutorial-ch2"
-description = "Chapter 2 of rCore Tutorial: Batch processing system with privilege levels and trap handling."
-version = "0.4.8"
+name = "cg-tg-rcore-tutorial-t3l2"
+description = "A learning-oriented rCore Tutorial chapter 2 kernel crate that assembles a moving Tangram OS logo through batch user programs and trap-driven syscalls."
+version = "0.0.0"
 edition = "2024"
 authors = ["YdrMaster <ydrml@hotmail.com>","Yifan Wang<w-yf22@mails.tsinghua.edu.cn>","Yu Chen <yuchen@tsinghua.edu.cn>"]
-repository = "https://github.com/rcore-os/tg-rcore-tutorial-ch2"
-homepage = "https://github.com/rcore-os/tg-rcore-tutorial-ch2/tree/test"
-documentation = "https://docs.rs/tg-rcore-tutorial-ch2"
+repository = "https://github.com/cg24-THU/tg-rcore-tutorial"
+homepage = "https://github.com/cg24-THU/tg-rcore-tutorial/tree/test/tg-rcore-tutorial-ch2"
+documentation = "https://docs.rs/cg-tg-rcore-tutorial-t3l2"
 license = "GPL-3.0"
 readme = "README.md"
-keywords = ["rcore", "tutorial", "no-std", "riscv", "batch-system"]
-categories = ["no-std", "embedded"]
-exclude = [
-    "tg-user/**",
-#    ".cargo/config.toml",
+keywords = ["ai", "ai4ose", "kernel", "learning", "os"]
+categories = ["os", "embedded", "no-std"]
+rust-version = "1.85"
+include = [
+    ".cargo/config.toml",
+    "Cargo.toml",
+    "Makefile",
+    "README.md",
+    "build.rs",
+    "docs/**",
+    "rust-toolchain.toml",
+    "src/**",
+    "test.sh",
+    "user-apps/**",
 ]
 
 [profile.dev]
@@ -21,6 +30,12 @@ panic = "abort"
 
 [profile.release]
 panic = "abort"
+
+[[bin]]
+name = "cg-tg-rcore-tutorial-t3l2"
+path = "src/main.rs"
+test = false
+bench = false
 
 [dependencies]
 riscv = "0.10.1"
@@ -37,3 +52,6 @@ tg-syscall = { package = "tg-rcore-tutorial-syscall", path = "../tg-rcore-tutori
 tg-linker = { package = "tg-rcore-tutorial-linker", path = "../tg-rcore-tutorial-linker", version = "0.4.8" }
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
+
+[package.metadata.docs.rs]
+targets = ["riscv64gc-unknown-none-elf"]

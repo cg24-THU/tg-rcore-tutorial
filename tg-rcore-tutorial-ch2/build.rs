@@ -48,9 +48,8 @@ fn should_skip_build_apps() -> bool {
 
 fn write_linker() {
     let ld = PathBuf::from(env::var_os("OUT_DIR").unwrap()).join("linker.ld");
-    fs::write(&ld, tg_linker::NOBIOS_SCRIPT).unwrap_or_else(|err| {
-        panic!("failed to write linker script to {}: {}", ld.display(), err)
-    });
+    fs::write(&ld, tg_linker::NOBIOS_SCRIPT)
+        .unwrap_or_else(|err| panic!("failed to write linker script to {}: {}", ld.display(), err));
     println!("cargo:rustc-link-arg=-T{}", ld.display());
 }
 
@@ -58,15 +57,24 @@ fn build_apps() {
     let tg_user_root = ensure_tg_user();
     let cases_path = tg_user_root.join("cases.toml");
     println!("cargo:rerun-if-changed={}", cases_path.display());
-    println!("cargo:rerun-if-changed={}", tg_user_root.join("Cargo.toml").display());
-    println!("cargo:rerun-if-changed={}", tg_user_root.join("src").display());
+    println!(
+        "cargo:rerun-if-changed={}",
+        tg_user_root.join("Cargo.toml").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        tg_user_root.join("src").display()
+    );
 
     let cfg = fs::read_to_string(&cases_path).unwrap_or_else(|err| {
-        panic!("failed to read cases.toml from {}: {}", cases_path.display(), err)
+        panic!(
+            "failed to read cases.toml from {}: {}",
+            cases_path.display(),
+            err
+        )
     });
-    let mut cases_map: HashMap<String, Cases> = toml::from_str(&cfg).unwrap_or_else(|err| {
-        panic!("failed to parse cases.toml: {err}")
-    });
+    let mut cases_map: HashMap<String, Cases> =
+        toml::from_str(&cfg).unwrap_or_else(|err| panic!("failed to parse cases.toml: {err}"));
 
     let cases = cases_map.remove("ch2").unwrap_or_default();
     let base = cases.base.unwrap_or(0);
@@ -114,7 +122,9 @@ fn build_user_app(tg_user_root: &PathBuf, name: &str, base_address: u64) {
         cmd.env("BASE_ADDRESS", base_address.to_string());
     }
 
-    let status = cmd.status().expect("failed to execute cargo build for user app");
+    let status = cmd
+        .status()
+        .expect("failed to execute cargo build for user app");
     if !status.success() {
         panic!("failed to build user app {name}");
     }
@@ -122,7 +132,8 @@ fn build_user_app(tg_user_root: &PathBuf, name: &str, base_address: u64) {
 
 fn objcopy_to_bin(elf: &PathBuf) -> PathBuf {
     let bin = elf.with_extension("bin");
-    let status = Command::new("rust-objcopy")
+    let objcopy = locate_objcopy();
+    let status = Command::new(&objcopy)
         .args([
             elf.to_string_lossy().as_ref(),
             "--strip-all",
@@ -131,11 +142,92 @@ fn objcopy_to_bin(elf: &PathBuf) -> PathBuf {
             bin.to_string_lossy().as_ref(),
         ])
         .status()
-        .expect("failed to execute rust-objcopy");
+        .unwrap_or_else(|err| panic!("failed to execute {}: {err}", objcopy.display()));
     if !status.success() {
-        panic!("rust-objcopy failed for {}", elf.display());
+        panic!("{} failed for {}", objcopy.display(), elf.display());
     }
     bin
+}
+
+fn locate_objcopy() -> PathBuf {
+    if let Ok(path) = env::var("RUST_OBJCOPY") {
+        let path = PathBuf::from(path);
+        if path.exists() {
+            return path;
+        }
+    }
+
+    let rust_objcopy = PathBuf::from("rust-objcopy");
+    if Command::new(&rust_objcopy)
+        .arg("--version")
+        .status()
+        .is_ok_and(|status| status.success())
+    {
+        return rust_objcopy;
+    }
+
+    if let Some(path) = rustup_llvm_objcopy() {
+        return path;
+    }
+
+    if let Some(path) = any_installed_llvm_objcopy() {
+        return path;
+    }
+
+    panic!(
+        "no objcopy tool found; install cargo-binutils or set RUST_OBJCOPY to a valid rust-objcopy/llvm-objcopy path"
+    );
+}
+
+fn rustup_llvm_objcopy() -> Option<PathBuf> {
+    let rustc = env::var("RUSTC").unwrap_or_else(|_| "rustc".into());
+    let sysroot_output = Command::new(&rustc)
+        .args(["--print", "sysroot"])
+        .output()
+        .ok()?;
+    if !sysroot_output.status.success() {
+        return None;
+    }
+    let host_output = Command::new(&rustc).arg("-vV").output().ok()?;
+    if !host_output.status.success() {
+        return None;
+    }
+
+    let sysroot = String::from_utf8(sysroot_output.stdout).ok()?;
+    let host = String::from_utf8(host_output.stdout)
+        .ok()?
+        .lines()
+        .find_map(|line| line.strip_prefix("host: "))?
+        .trim()
+        .to_string();
+
+    let path = PathBuf::from(sysroot.trim())
+        .join("lib")
+        .join("rustlib")
+        .join(host)
+        .join("bin")
+        .join("llvm-objcopy");
+    path.exists().then_some(path)
+}
+
+fn any_installed_llvm_objcopy() -> Option<PathBuf> {
+    let rustup_home = env::var_os("RUSTUP_HOME")
+        .map(PathBuf::from)
+        .or_else(|| env::var_os("HOME").map(|home| PathBuf::from(home).join(".rustup")))?;
+    let toolchains = rustup_home.join("toolchains");
+    let entries = std::fs::read_dir(toolchains).ok()?;
+
+    for toolchain in entries.flatten() {
+        let rustlib = toolchain.path().join("lib").join("rustlib");
+        let hosts = std::fs::read_dir(rustlib).ok()?;
+        for host in hosts.flatten() {
+            let candidate = host.path().join("bin").join("llvm-objcopy");
+            if candidate.exists() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
 }
 
 fn write_app_asm(path: &PathBuf, base: u64, step: u64, bins: &[PathBuf]) {
@@ -209,8 +301,15 @@ fn ensure_tg_user() -> PathBuf {
         }
     }
 
-    // 在教程仓库里开发时，优先复用同级目录的 tg-user 源码，避免依赖 cargo-clone。
+    // 发布后的独立 crate 优先使用包内自带的最小用户态程序集合，
+    // 保证 `cargo clone && cargo run` 不依赖外部未发布的本地修改。
     let manifest_dir = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
+    let bundled_dir = manifest_dir.join("user-apps");
+    if bundled_dir.join("Cargo.toml").exists() {
+        return bundled_dir;
+    }
+
+    // 在教程仓库里开发时，优先复用同级目录的 tg-user 源码，避免依赖 cargo-clone。
     let sibling_dir = manifest_dir
         .parent()
         .map(|dir| dir.join("tg-rcore-tutorial-user"))
@@ -273,7 +372,8 @@ fn ensure_workspace_table(dir: &PathBuf) {
     let cargo_toml = dir.join("Cargo.toml");
     let content = fs::read_to_string(&cargo_toml).unwrap_or_default();
     if !content.contains("[workspace]") {
-        fs::write(&cargo_toml, format!("{}\n[workspace]\n", content))
-            .unwrap_or_else(|err| panic!("failed to patch Cargo.toml in {}: {}", dir.display(), err));
+        fs::write(&cargo_toml, format!("{}\n[workspace]\n", content)).unwrap_or_else(|err| {
+            panic!("failed to patch Cargo.toml in {}: {}", dir.display(), err)
+        });
     }
 }

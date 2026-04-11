@@ -142,10 +142,10 @@ cargo run --features exercise
 
 ## 版本与 Tag
 
-- Crate version: `0.0.0`
-- Git tag: `v0.0.0`
+- Crate version: `0.0.1`
+- Git tag: `cg-tg-rcore-tutorial-ch5-v0.0.1`
 
-本 README 所描述的发布版本与 tag `v0.0.0` 对应。
+本 README 所描述的发布版本与 tag `cg-tg-rcore-tutorial-ch5-v0.0.1` 对应。
 
 ## 输出示例
 

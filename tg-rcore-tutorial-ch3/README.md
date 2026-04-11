@@ -171,12 +171,12 @@ make run
 
 ## 版本与 Tag
 
-- Crate version: `0.0.0`
+- Crate version: `0.0.1`
 - Repository: `https://github.com/cg24-THU/tg-rcore-tutorial`
 - Crate subdir: `tg-rcore-tutorial-ch3`
-- Git tag for this crate: `cg-tg-rcore-tutorial-ch3-v0.0.0`
+- Git tag for this crate: `cg-tg-rcore-tutorial-ch3-v0.0.1`
 
-本 README 描述的发布内容与 `cg-tg-rcore-tutorial-ch3-v0.0.0` 对应。
+本 README 描述的发布内容与 `cg-tg-rcore-tutorial-ch3-v0.0.1` 对应。
 
 ## 输出示例
 

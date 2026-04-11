@@ -1,0 +1,26 @@
+[package]
+name = "tg-rcore-tutorial-storage"
+version = "0.1.0"
+edition = "2024"
+authors = ["Chaoge"]
+license = "GPL-3.0"
+description = "A minimal rCore-style storage kernel based on Chapter 1, extended with interrupt-driven VirtIO block read/write."
+readme = "README.md"
+rust-version = "1.85"
+
+[[bin]]
+name = "tg-rcore-tutorial-storage"
+path = "src/main.rs"
+test = false
+bench = false
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+
+[dependencies]
+riscv = "0.10.1"
+tg-sbi = { package = "tg-rcore-tutorial-sbi", path = "../tg-rcore-tutorial-sbi", version = "0.4.8", features = ["nobios"] }
+virtio-drivers = "0.1.0"

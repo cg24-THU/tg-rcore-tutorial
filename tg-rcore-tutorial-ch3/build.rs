@@ -234,8 +234,16 @@ fn ensure_tg_user() -> PathBuf {
         }
     }
 
-    // 在教程仓库里开发时，优先复用同级目录的 tg-user 源码，避免依赖 cargo-clone。
+    // 对 crates.io 发布包，优先复用 crate 内嵌的 tg-user 快照，
+    // 这样 cargo clone 后无需依赖外部用户态 crate 或 cargo-clone。
     let manifest_dir = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
+    let bundled_dir = manifest_dir.join("tg-user");
+    if bundled_dir.join("Cargo.toml").exists() {
+        ensure_workspace_table(&bundled_dir);
+        return bundled_dir;
+    }
+
+    // 在教程仓库里开发时，优先复用同级目录的 tg-user 源码，避免依赖 cargo-clone。
     let sibling_dir = manifest_dir
         .parent()
         .map(|dir| dir.join("tg-rcore-tutorial-user"))

@@ -217,12 +217,27 @@ fn ensure_tg_user() -> PathBuf {
         .expect("TG_USER_VERSION not set; add it to .cargo/config.toml [env]");
 
     let manifest_dir = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
+    let bundled_dir = manifest_dir.join("tg-user");
+    if bundled_dir.join("Cargo.toml").exists() {
+        ensure_workspace_table(&bundled_dir);
+        return bundled_dir;
+    }
+
     let tg_user_dir = manifest_dir.join(&local_dir_name);
 
     // 本地缓存目录已存在则直接使用
     if tg_user_dir.join("Cargo.toml").exists() {
         ensure_workspace_table(&tg_user_dir);
         return tg_user_dir;
+    }
+
+    // 其次优先复用仓库中的兄弟目录，而不是在构建时尝试 cargo clone。
+    let sibling_dir = manifest_dir
+        .parent()
+        .map(|parent| parent.join(&local_dir_name))
+        .unwrap();
+    if sibling_dir.join("Cargo.toml").exists() {
+        return sibling_dir;
     }
 
     // 从 crates.io 克隆指定包

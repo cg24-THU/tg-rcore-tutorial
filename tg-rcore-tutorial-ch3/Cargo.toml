@@ -1,7 +1,7 @@
 [package]
 name = "cg-tg-rcore-tutorial-ch3"
 description = "A reproducible learning crate for rCore Tutorial chapter 3, covering multiprogramming, cooperative/preemptive scheduling, clock_gettime, and trace on RISC-V."
-version = "0.0.0"
+version = "0.0.1"
 edition = "2024"
 rust-version = "1.85"
 authors = ["Chaoge <2024010843@secoder.net>"]
@@ -23,6 +23,10 @@ include = [
     "report.md",
     "rust-toolchain.toml",
     "test.sh",
+    "tg-user/**",
+    "tg-rcore-tutorial-console/**",
+    "tg-rcore-tutorial-signal-defs/**",
+    "tg-rcore-tutorial-syscall/**",
     "src/**",
 ]
 

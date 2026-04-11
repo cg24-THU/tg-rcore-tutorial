@@ -1,5 +1,5 @@
 [package]
-name = "cg-tg-rcore-tutorial-t3l8"
+name = "cg-tg-rcore-tutorial-ch8"
 description = "A reproducible Rust learning crate for the tg-rcore-tutorial chapter 8 kernel experiment, including threading, synchronization, framebuffer I/O, and a user-mode Doom demo path."
 version = "0.0.0"
 edition = "2024"
@@ -7,7 +7,7 @@ authors = ["YdrMaster <ydrml@hotmail.com>", "Yifan Wang <w-yf22@mails.tsinghua.e
 rust-version = "1.85"
 repository = "https://github.com/cg24-THU/tg-rcore-tutorial"
 homepage = "https://github.com/cg24-THU/tg-rcore-tutorial/tree/test/tg-rcore-tutorial-ch8"
-documentation = "https://docs.rs/cg-tg-rcore-tutorial-t3l8"
+documentation = "https://docs.rs/cg-tg-rcore-tutorial-ch8"
 license = "GPL-3.0"
 readme = "README.md"
 keywords = ["ai", "ai4ose", "kernel", "learning", "os"]

@@ -1,6 +1,6 @@
-# cg-tg-rcore-tutorial-t3l8
+# cg-tg-rcore-tutorial-ch8
 
-`cg-tg-rcore-tutorial-t3l8` is a reproducible Rust learning crate built from the `tg-rcore-tutorial` chapter 8 experiment. It preserves the original chapter-8 teaching goals around threads, synchronization primitives, and deadlock detection, and it keeps the framebuffer / keyboard path that was later added for a user-mode DoomGeneric demo on QEMU.
+`cg-tg-rcore-tutorial-ch8` is a reproducible Rust learning crate built from the `tg-rcore-tutorial` chapter 8 experiment. It preserves the original chapter-8 teaching goals around threads, synchronization primitives, and deadlock detection, and it keeps the framebuffer / keyboard path that was later added for a user-mode DoomGeneric demo on QEMU.
 
 This crate is prepared for two concrete use cases:
 
@@ -131,16 +131,16 @@ doom
 ### Option 1: clone from crates.io
 
 ```bash
-cargo clone cg-tg-rcore-tutorial-t3l8
-cd cg-tg-rcore-tutorial-t3l8
+cargo clone cg-tg-rcore-tutorial-ch8
+cd cg-tg-rcore-tutorial-ch8
 cargo run
 ```
 
 Or:
 
 ```bash
-cargo clone cg-tg-rcore-tutorial-t3l8
-cd cg-tg-rcore-tutorial-t3l8
+cargo clone cg-tg-rcore-tutorial-ch8
+cd cg-tg-rcore-tutorial-ch8
 make run
 ```
 
@@ -167,6 +167,8 @@ Base checker:
 ```bash
 bash ./test.sh base
 ```
+
+The test script forces a headless QEMU runner, so it works in CI or Docker environments without SDL / X11.
 
 Exercise checker:
 
@@ -206,7 +208,7 @@ doom: first frame flushed
 Release mapping:
 
 ```text
-v0.0.0 -> cg-tg-rcore-tutorial-t3l8 0.0.0
+v0.0.0 -> cg-tg-rcore-tutorial-ch8 0.0.0
 ```
 
 ## Included Learning Documents
@@ -218,6 +220,7 @@ v0.0.0 -> cg-tg-rcore-tutorial-t3l8 0.0.0
 ## Notes
 
 - this is a teaching kernel, not a production OS
-- `cargo run` depends on local QEMU availability
+- `cargo run` uses the default graphical QEMU runner with VirtIO GPU + keyboard enabled
+- `bash ./test.sh ...` overrides the runner to a headless serial-only QEMU command for automated checking
 - Doom is optional at build time; the kernel itself still runs without a WAD
 - the bundled `tg-user` snapshot is included specifically so the published crate remains reproducible even when upstream user crates evolve

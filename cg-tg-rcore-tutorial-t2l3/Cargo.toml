@@ -1,0 +1,42 @@
+[package]
+name = "cg-tg-rcore-tutorial-t2l3"
+description = "A learning-oriented rCore Tutorial tangram kernel experiment that boots a minimal RISC-V S-mode kernel and renders a tangram-style \"OS\" image through VirtIO-GPU framebuffer output."
+version = "0.0.0"
+edition = "2024"
+authors = ["Chaoge"]
+repository = "https://github.com/cg24-THU/tg-rcore-tutorial"
+homepage = "https://github.com/cg24-THU/tg-rcore-tutorial/tree/test/cg-tg-rcore-tutorial-t2l3"
+documentation = "https://docs.rs/cg-tg-rcore-tutorial-t2l3"
+license = "GPL-3.0"
+readme = "README.md"
+rust-version = "1.85"
+keywords = ["ai", "ai4ose", "kernel", "learning", "os"]
+categories = ["no-std", "embedded"]
+include = [
+    "src/main.rs",
+    "README.md",
+    "Cargo.toml",
+    "Cargo.lock",
+    "build.rs",
+    "rust-toolchain.toml",
+    ".cargo/config.toml",
+    "Makefile",
+    "docs/**",
+    "test.sh",
+]
+
+[[bin]]
+name = "cg-tg-rcore-tutorial-t2l3"
+path = "src/main.rs"
+test = false
+bench = false
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+
+[dependencies]
+tg-sbi = { package = "tg-rcore-tutorial-sbi", path = "../tg-rcore-tutorial-sbi", version = "0.4.8", features = ["nobios"] }
+virtio-drivers = "0.1.0"

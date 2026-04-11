@@ -1,19 +1,33 @@
 [package]
-name = "tg-rcore-tutorial-ch4"
-description = "Chapter 4 of rCore Tutorial: Address space management with SV39 virtual memory."
-version = "0.4.8"
+name = "cg-tg-rcore-tutorial-ch4"
+description = "A reproducible learning crate for rCore Tutorial chapter 4, covering Sv39 address spaces, ELF loading, sbrk, trace, mmap, and munmap on RISC-V."
+version = "0.0.1"
 edition = "2024"
+rust-version = "1.85"
 authors = ["YdrMaster <ydrml@hotmail.com>","Yifan Wang<w-yf22@mails.tsinghua.edu.cn>","Yu Chen <yuchen@tsinghua.edu.cn>"]
-repository = "https://github.com/rcore-os/tg-rcore-tutorial-ch4"
-homepage = "https://github.com/rcore-os/tg-rcore-tutorial-ch4/tree/test"
-documentation = "https://docs.rs/tg-rcore-tutorial-ch4"
+repository = "https://github.com/cg24-THU/tg-rcore-tutorial"
+homepage = "https://github.com/cg24-THU/tg-rcore-tutorial/tree/test/tg-rcore-tutorial-ch4"
+documentation = "https://docs.rs/cg-tg-rcore-tutorial-ch4"
 license = "GPL-3.0"
 readme = "README.md"
-keywords = ["rcore", "tutorial", "no-std", "riscv", "virtual-memory"]
+keywords = ["ai", "ai4ose", "kernel", "learning", "os"]
 categories = ["no-std", "embedded"]
-exclude = [
+include = [
+    ".cargo/config.toml",
+    "Cargo.toml",
+    "LICENSE",
+    "Makefile",
+    "README.md",
+    "build.rs",
+    "exercise.md",
+    "report.md",
+    "rust-toolchain.toml",
+    "test.sh",
     "tg-user/**",
-#    ".cargo/config.toml",
+    "tg-rcore-tutorial-console/**",
+    "tg-rcore-tutorial-signal-defs/**",
+    "tg-rcore-tutorial-syscall/**",
+    "src/**",
 ]
 
 [features]

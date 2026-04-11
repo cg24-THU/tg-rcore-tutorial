@@ -1,6 +1,6 @@
-# 第四章：地址空间
+# cg-tg-rcore-tutorial-ch4
 
-本章在第三章"多道程序与分时多任务"的基础上，引入了 **RISC-V Sv39 虚拟内存机制**，为每个用户进程提供**独立的地址空间**（tg-rcore-tutorial-ch4）。这是操作系统实现**进程隔离**和**内存保护**的关键一步。
+`cg-tg-rcore-tutorial-ch4` 是一个面向学习者整理的 rCore Tutorial 第四章实验 crate。它在第三章"多道程序与分时多任务"的基础上，引入了 **RISC-V Sv39 虚拟内存机制**，为每个用户进程提供**独立的地址空间**。这是操作系统实现**进程隔离**和**内存保护**的关键一步。
 
 通过本章的学习和实践，你将理解：
 
@@ -135,15 +135,15 @@ rustup component add llvm-tools
 **方式一：只获取本实验**
 
 ```bash
-cargo clone tg-rcore-tutorial-ch4
-cd tg-rcore-tutorial-ch4
+cargo clone cg-tg-rcore-tutorial-ch4
+cd cg-tg-rcore-tutorial-ch4
 ```
 
 **方式二：获取所有实验**
 
 ```bash
-git clone --recurse-submodules https://github.com/rcore-os/tg-rcore-tutorial.git
-cd tg-rcore-tutorial-ch4
+git clone https://github.com/cg24-THU/tg-rcore-tutorial.git
+cd tg-rcore-tutorial/tg-rcore-tutorial-ch4
 ```
 
 ## 二、编译与运行
@@ -183,13 +183,13 @@ qemu-system-riscv64 \
     -machine virt \
     -nographic \
     -bios none \
-    -kernel target/riscv64gc-unknown-none-elf/debug/tg-rcore-tutorial-ch4
+    -kernel target/riscv64gc-unknown-none-elf/debug/cg-tg-rcore-tutorial-ch4
 ```
 
 ### 2.3 预期输出
 
 ```
-[tg-rcore-tutorial-ch4 ...] Hello, world!
+[cg-tg-rcore-tutorial-ch4 ...] Hello, world!
 [ INFO] .text    ---> 0x80200000..0x8020xxxx
 [ INFO] .rodata  ---> 0x8020xxxx..0x8020xxxx
 [ INFO] .data    ---> 0x8020xxxx..0x8020xxxx
@@ -318,7 +318,7 @@ satp 寄存器 → 根页表物理地址
 
 ### 3.3 内核地址空间
 
-tg-rcore-tutorial-ch4 的内核地址空间使用**恒等映射**（Identity Mapping）：虚拟地址 == 物理地址。
+本 crate 的内核地址空间使用**恒等映射**（Identity Mapping）：虚拟地址 == 物理地址。
 
 ```
 内核地址空间

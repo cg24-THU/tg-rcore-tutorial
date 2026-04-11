@@ -32,6 +32,8 @@ ensure_tg_checker
 # 使用 pipefail 确保管道中任意命令失败都能被捕获
 set -o pipefail
 
+QEMU_HEADLESS_RUNNER='qemu-system-riscv64 -machine virt -nographic -bios none -serial stdio -monitor none -drive file=target/riscv64gc-unknown-none-elf/debug/fs.img,if=none,format=raw,id=x0 -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0 -kernel'
+
 run_base() {
     echo "运行 ch8 基础测试..."
     cargo clean
@@ -39,7 +41,7 @@ run_base() {
     echo -e "${YELLOW}────────── cargo run 输出 ──────────${NC}"
 
     # 使用 tee 将 cargo run 的输出同时显示在终端和传递给 tg-rcore-tutorial-checker
-    if cargo run 2>&1 | tee /dev/stderr | tg-rcore-tutorial-checker --ch 8; then
+    if CARGO_TARGET_RISCV64GC_UNKNOWN_NONE_ELF_RUNNER="$QEMU_HEADLESS_RUNNER" cargo run 2>&1 | tee /dev/stderr | tg-rcore-tutorial-checker --ch 8; then
         echo ""
         echo -e "${YELLOW}────────── 测试结果 ──────────${NC}"
         echo -e "${GREEN}✓ ch8 基础测试通过${NC}"
@@ -61,7 +63,7 @@ run_exercise() {
     echo -e "${YELLOW}────────── cargo run --features exercise 输出 ──────────${NC}"
 
     # 使用 tee 将 cargo run 的输出同时显示在终端和传递给 tg-rcore-tutorial-checker
-    if cargo run --features exercise 2>&1 | tee /dev/stderr | tg-rcore-tutorial-checker --ch 8 --exercise; then
+    if CARGO_TARGET_RISCV64GC_UNKNOWN_NONE_ELF_RUNNER="$QEMU_HEADLESS_RUNNER" cargo run --features exercise 2>&1 | tee /dev/stderr | tg-rcore-tutorial-checker --ch 8 --exercise; then
         echo ""
         echo -e "${YELLOW}────────── 测试结果 ──────────${NC}"
         echo -e "${GREEN}✓ ch8 练习测试通过${NC}"

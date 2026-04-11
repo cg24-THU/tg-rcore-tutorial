@@ -1,7 +1,7 @@
 [package]
 name = "cg-tg-rcore-tutorial-ch8"
 description = "A reproducible Rust learning crate for the tg-rcore-tutorial chapter 8 kernel experiment, including threading, synchronization, framebuffer I/O, and a user-mode Doom demo path."
-version = "0.0.0"
+version = "0.0.1"
 edition = "2024"
 authors = ["YdrMaster <ydrml@hotmail.com>", "Yifan Wang <w-yf22@mails.tsinghua.edu.cn>", "Yu Chen <yuchen@tsinghua.edu.cn>"]
 rust-version = "1.85"
